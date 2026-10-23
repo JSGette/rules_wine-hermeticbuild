@@ -102,6 +102,9 @@ Path conversion is explicit: `{windows_path:execroot/relative/path}` converts on
 that path to Wine's `Z:` namespace, leaving options and opaque strings intact.
 Embedded options work, e.g. `/out:{windows_path:$@}`. For adapter runfiles use
 `{windows_runfile:_main/package/file}` (or the external canonical runfiles key).
+Adapters resolve `$(location ...)` and `$(locations ...)` in declared payload/data
+arguments to canonical runfiles keys, including existing nested
+`{windows_path:$(location ...)}` syntax. Action locations remain execroot paths.
 Response-file contents and encoding belong to the payload; UTF-8 fixture content
 and Args parameter-file transport are exercised. Do not rewrite every slash.
 

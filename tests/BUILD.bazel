@@ -203,3 +203,39 @@ tools_action(
     default_group = True,
     extra = "additional_tool",
 )
+
+windows_test(
+    name = "generated_location_test",
+    arch = "x86_64",
+    arguments = ["@{windows_path:$(location generate)}"],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["generate"],
+)
+
+windows_test(
+    name = "external_location_test",
+    arch = "x86_64",
+    arguments = ["@$(location @platforms//:LICENSE)"],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["@platforms//:LICENSE"],
+)
+
+windows_binary(
+    name = "location_binary",
+    arch = "x86_64",
+    arguments = [
+        "@{windows_path:$(location generate)}",
+        "@$(location @platforms//:LICENSE)",
+        "$(location generate)",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    data = [
+        "generate",
+        "@platforms//:LICENSE",
+    ],
+)
+
+adapter_action(
+    name = "location_tool",
+    tool = "location_binary",
+)

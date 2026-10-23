@@ -231,3 +231,13 @@ additional tools with the payload File/FilesToRunProvider. Three real Linux
 consumers (default, named+tools, default+tools) passed; tool cases read a Unicode
 space-containing file available only through the auxiliary tool's runfiles tree,
 and emitted its expected contents in the declared JSON output.
+
+Review regression: adapter location expansion. Real Linux tests failed before the
+fix for generated data (`bazel-out/...` incorrectly resolved under .runfiles/_main)
+and external data (`external/platforms/LICENSE` absent in runfiles cwd). Adapters
+now expand declared location expressions into canonical runfile references;
+existing nested windows_path syntax is collapsed to one runfile reference, while
+bare locations and locations lists retain their expression semantics. Both tests
+pass. A separate exec-configured adapter action tool read generated JSON and an
+external file and emitted a canonical Windows path for a bare location; its JSON
+artifact was inspected. windows_run action execroot expansion is unchanged.

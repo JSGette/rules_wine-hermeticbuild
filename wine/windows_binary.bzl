@@ -6,6 +6,67 @@ load("//wine/private:payload.bzl", "payload", "payload_attrs")
 def _rlocation(ctx, file):
     return file.short_path[3:] if file.short_path.startswith("../") else ctx.workspace_name + "/" + file.short_path
 
+def _location_runfiles(ctx, expression, targets, keys):
+    expanded = ctx.expand_location("$(" + expression + ")", targets = targets)
+    if expanded in keys:
+        return expanded, "{windows_runfile:" + keys[expanded] + "}"
+
+    # $(locations) returns space-separated paths; match complete known paths so
+    # filenames containing spaces remain one runfile reference.
+    result = []
+    consumed = 0
+    for index in range(len(expanded)):
+        if index < consumed:
+            continue
+        if expanded[index] == " ":
+            result.append(" ")
+            continue
+        match = ""
+        for path in keys:
+            end = index + len(path)
+            if expanded.startswith(path, index) and (end == len(expanded) or expanded[end] == " ") and len(path) > len(match):
+                match = path
+        if not match:
+            fail("location expansion is not a declared payload/data path: " + expanded)
+        result.append("{windows_runfile:" + keys[match] + "}")
+        consumed = index + len(match)
+    return expanded, "".join(result)
+
+def _adapter_arguments(ctx):
+    targets = ctx.attr.binary + ctx.attr.data
+    keys = {}
+    for target in targets:
+        info = target[DefaultInfo]
+        files = info.files.to_list()
+        if info.files_to_run.executable:
+            files.append(info.files_to_run.executable)
+        for file in files:
+            keys[file.path] = _rlocation(ctx, file)
+    arguments = []
+    for argument in ctx.attr.arguments:
+        parts = argument.split("$(")
+        result = parts[0]
+        for part in parts[1:]:
+            expression, separator, tail = part.partition(")")
+            if not separator or expression.split(" ", 1)[0] not in ["location", "locations"]:
+                result += "$(" + part
+                continue
+            expanded, converted = _location_runfiles(ctx, expression, targets, keys)
+            wrapped = False
+            for wrapper in ["{windows_path:", "{windows_runfile:"]:
+                if result.endswith(wrapper) and expanded in keys:
+                    suffix, close, remainder = tail.partition("}")
+                    if close:
+                        result = result[:-len(wrapper)] + "{windows_runfile:" + keys[expanded] + suffix + "}"
+                        tail = remainder
+                        wrapped = True
+                        break
+            if not wrapped:
+                result += converted
+            result += tail
+        arguments.append(result)
+    return arguments
+
 def adapter_impl(ctx):
     arch = ctx.attr._arch
     group = ctx.attr._group
@@ -19,7 +80,7 @@ def adapter_impl(ctx):
         "backend": runner.backend,
         "arch": arch,
         "payload": _rlocation(ctx, binary.file),
-        "args": [ctx.expand_location(arg, targets = ctx.attr.binary + ctx.attr.data) for arg in ctx.attr.arguments],
+        "args": _adapter_arguments(ctx),
         "env": ctx.attr.env,
         "runfiles": True,
     }
