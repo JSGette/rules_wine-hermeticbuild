@@ -13,6 +13,7 @@ _DEFAULT = struct(
     files = ["**"],
     arch = "x86_64",
     exec_os = "linux",
+    env = {},
     identity = "Kron4ek Wine 11.0 amd64 WoW64",
     requirements = "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See VALIDATION.md.",
 )
@@ -59,6 +60,7 @@ def _impl(ctx):
             repos = {}
             identities = {}
             requirements = {}
+            environments = {}
             for os, arch, selected in [("linux", "x86_64", tag.x86_64), ("linux", "aarch64", tag.aarch64), ("osx", "x86_64", tag.macos_x86_64), ("osx", "aarch64", tag.macos_aarch64)]:
                 if not selected:
                     continue
@@ -76,7 +78,8 @@ def _impl(ctx):
                 repos[key] = repo
                 identities[key] = dist.identity
                 requirements[key] = dist.requirements
-            registration_repository(name = tag.name, distributions = repos, identities = identities, requirements = requirements)
+                environments[key] = json.encode(dist.env)
+            registration_repository(name = tag.name, distributions = repos, identities = identities, requirements = requirements, environments = environments)
             if mod.is_root:
                 direct.append(tag.name)
     # Repository declaration alone does not fetch its archive.
@@ -97,6 +100,7 @@ wine = module_extension(implementation = _impl, tag_classes = {
         "files": attr.string_list(default = ["**"]),
         "identity": attr.string(mandatory = True),
         "requirements": attr.string(mandatory = True),
+        "env": attr.string_dict(doc = "Loader environment; supports {loader_dir} and {server_dir}."),
     }),
     "toolchains": tag_class(attrs = {
         "name": attr.string(mandatory = True),

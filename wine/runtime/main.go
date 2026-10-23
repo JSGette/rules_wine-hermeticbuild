@@ -25,6 +25,7 @@ type configuration struct {
  Args []string `json:"args"`
  Env map[string]string `json:"env"`
  Runfiles bool `json:"runfiles"`
+ RuntimeEnv map[string]string `json:"runtime_env"`
 }
 
 func fatal(err error) { fmt.Fprintln(os.Stderr, "rules_wine:", err); os.Exit(125) }
@@ -57,17 +58,17 @@ func windowsPath(path string) string {
  return "Z:" + strings.ReplaceAll(full, "/", "\\")
 }
 
-func convert(value string, runfiles bool) (string, error) {
- const marker = "{windows_path:"
- for strings.Contains(value, marker) {
-  start := strings.Index(value, marker)
-  end := strings.IndexByte(value[start:], '}')
-  if end < 0 { return "", errors.New("unterminated {windows_path:...} argument") }
-  end += start
-  path := value[start+len(marker):end]
-  var err error
-  if runfiles { path, err = runfile(path); if err != nil { return "", err } }
-  value = value[:start] + windowsPath(path) + value[end+1:]
+func convert(value string, _ bool) (string, error) {
+ for _, marker := range []string{"{windows_path:", "{windows_runfile:"} {
+  for strings.Contains(value, marker) {
+   start := strings.Index(value, marker)
+   end := strings.IndexByte(value[start:], '}')
+   if end < 0 { return "", errors.New("unterminated Windows path interpolation") }
+   end += start
+   path := value[start+len(marker):end]
+   if marker == "{windows_runfile:" { var err error; path, err = runfile(path); if err != nil { return "", err } }
+   value = value[:start] + windowsPath(path) + value[end+1:]
+  }
  }
  return value, nil
 }
@@ -113,7 +114,7 @@ func invoke(c configuration, extra []string) int {
  resolve := func(path string) string {
   if path == "" { return path }; var err error
   if c.Runfiles { path, err = runfile(path) } else { path, err = filepath.Abs(path) }
-  if err != nil { fatal(err) }; return path
+  if err != nil { fatal(err) }; canonical, err := filepath.EvalSymlinks(path); if err != nil { fatal(err) }; return canonical
  }
  c.Payload, c.Loader, c.Server = resolve(c.Payload), resolve(c.Loader), resolve(c.Server)
  if err := validatePE(c.Payload, c.Arch); err != nil { fmt.Fprintln(os.Stderr, "rules_wine:", err); return 125 }
@@ -127,19 +128,29 @@ func invoke(c configuration, extra []string) int {
   return execute(c.Payload, args, env, 0, signals)
  }
  if c.Backend != "wine" || runtime.GOOS != "linux" && runtime.GOOS != "darwin" { fmt.Fprintln(os.Stderr, "rules_wine: Wine backend requires Linux or macOS"); return 125 }
- scratch, err := os.MkdirTemp("", "rules-wine-"); if err != nil { fmt.Fprintln(os.Stderr, err); return 125 }
+ scratchBase := ""
+ // macOS's per-user TMPDIR plus Wine's server suffix can exceed sockaddr_un.
+ // /tmp is an allowed writable location; MkdirTemp creates a private 0700 dir.
+ if runtime.GOOS == "darwin" { scratchBase = "/tmp" }
+ scratch, err := os.MkdirTemp(scratchBase, "rules-wine-"); if err != nil { fmt.Fprintln(os.Stderr, err); return 125 }
  defer func() { if err := os.RemoveAll(scratch); err != nil { fmt.Fprintln(os.Stderr, "rules_wine: cleanup:", err) } }()
  prefix := filepath.Join(scratch, "prefix")
  for key, value := range map[string]string{
   "WINEPREFIX": prefix, "WINEARCH": "win64", "WINELOADER": c.Loader, "WINESERVER": c.Server,
-  "WINEDLLOVERRIDES": "mscoree,mshtml=", "WINEDEBUG": "-all", "HOME": scratch,
+  "WINEDLLOVERRIDES": "mscoree,mshtml,winemenubuilder.exe=", "WINEDEBUG": "-all", "HOME": scratch,
   "XDG_CACHE_HOME": scratch, "TMPDIR": scratch, "TMP": scratch, "TEMP": scratch,
   "LC_ALL": "C.UTF-8", "TZ": "UTC", "DISPLAY": "", "WAYLAND_DISPLAY": "",
   "PATH": filepath.Dir(c.Loader),
  } { env = setenv(env, key, value) }
+ for key, value := range c.RuntimeEnv {
+  switch key { case "WINEPREFIX", "WINEARCH", "WINELOADER", "WINESERVER", "WINEDLLOVERRIDES", "HOME", "TMPDIR", "PATH": fmt.Fprintln(os.Stderr, "rules_wine: reserved runtime environment", key); return 125 }
+  value = strings.ReplaceAll(value, "{loader_dir}", filepath.Dir(c.Loader))
+  value = strings.ReplaceAll(value, "{server_dir}", filepath.Dir(c.Server))
+  env = setenv(env, key, value)
+ }
  // Convert only the test protocol's declared paths. Opaque arguments remain opaque.
  for _, key := range []string{"TEST_TMPDIR", "TEST_UNDECLARED_OUTPUTS_DIR", "TEST_UNDECLARED_OUTPUTS_MANIFEST", "TEST_UNDECLARED_OUTPUTS_ANNOTATIONS_DIR", "XML_OUTPUT_FILE", "TEST_SHARD_STATUS_FILE", "TEST_SRCDIR", "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE"} {
-  for _, entry := range env { if strings.HasPrefix(entry, key+"=") { env = setenv(env, key, windowsPath(strings.TrimPrefix(entry, key+"="))); break } }
+  for _, entry := range env { if strings.HasPrefix(entry, key+"=") { value := strings.TrimPrefix(entry, key+"="); if value != "" { env = setenv(env, key, windowsPath(value)) }; break } }
  }
  setupReaper()
  defer func() {
@@ -149,7 +160,9 @@ func invoke(c configuration, extra []string) int {
   execute(c.Server, []string{"-w"}, env, 5*time.Second, quiet)
   reapChildren()
  }()
- if status := execute(c.Loader, []string{"wineboot.exe", "--init"}, env, 60*time.Second, signals); status != 0 { return status }
+ bootstrap := filepath.Join(filepath.Dir(c.Loader), "..", "lib", "wine", c.Arch+"-windows", "cmd.exe")
+ if _, err := os.Stat(bootstrap); err != nil { bootstrap = "cmd.exe" }
+ if status := execute(c.Loader, []string{bootstrap, "/c", "exit", "0"}, env, 60*time.Second, signals); status != 0 { return status }
  return execute(c.Loader, append([]string{windowsPath(c.Payload)}, args...), env, 0, signals)
 }
 

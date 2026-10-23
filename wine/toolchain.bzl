@@ -6,6 +6,7 @@ WineRuntimeInfo = provider(fields = {
     "files": "Complete immutable distribution depset.",
     "identity": "Distribution/version provenance.",
     "requirements": "Host library requirements, not inferred hermeticity.",
+    "env": "Distribution loader environment; {loader_dir} and {server_dir} placeholders.",
 })
 WindowsRunnerInfo = provider(fields = {
     "arch": "Same-CPU Windows payload architecture.",
@@ -25,6 +26,7 @@ def _impl(ctx):
             files = depset([ctx.file.loader, ctx.file.server], transitive = [ctx.attr.files[DefaultInfo].files] if ctx.attr.files else []),
             identity = ctx.attr.identity,
             requirements = ctx.attr.requirements,
+            env = ctx.attr.env,
         )
     elif ctx.file.loader or ctx.file.server or ctx.attr.files:
         fail("native backend must not depend on Wine")
@@ -42,5 +44,6 @@ windows_runner_toolchain = rule(
         "files": attr.label(),
         "identity": attr.string(),
         "requirements": attr.string(),
+        "env": attr.string_dict(),
     },
 )

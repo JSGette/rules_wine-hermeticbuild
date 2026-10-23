@@ -39,3 +39,25 @@ C/C++ compiler. Go distribution source: https://go.dev/dl/ .
 Native Windows, Linux ARM64 and macOS execution remain untested at this point.
 macOS support was added to scope during implementation: architecture-correct
 launchers and custom distributions, no implicit Rosetta or ARM64 archive fallback.
+
+## Actions and adapters (layer 2)
+
+`bazel build //tests:generate //tests:transitioned //tests:adapter_tool
+//tests:dll //tests:response --config=remote` passed. All five JSON artifacts
+inspected: child execution; output generation; spaces, Unicode and empty values;
+a real companion DLL exported function returning 42; UTF-8 response-file content.
+The adapter is consumed as a FilesToRunProvider in exec configuration by a
+separate action rule. The payload transition validates Windows/x86_64 while the
+output target remains Darwin ARM64. `aquery` confirms the executor and tools.
+
+Adapters use separate toolchain types constrained by their own executable target
+OS/CPU. Generic action runner types have no output target constraints. This is
+necessary because Bazel's exec_compatible_with is not configurable: attempting
+select there fails at package loading. Merely registering a Linux remote executor
+cannot select a Linux adapter for a local Darwin target. On a host with no matching
+configured Wine runtime, adapter analysis fails instead of emitting foreign code.
+
+Companion DLL layout contract: declared data preserves its existing runfiles path.
+DLLs requiring executable adjacency must already be adjacent in that layout (as
+in tests/fixture); arbitrary data declarations do not relocate files. For source
+outputs, arrange executable and companion outputs in the same relative directory.

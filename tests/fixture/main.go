@@ -15,6 +15,23 @@ import (
 
 func main() {
  args := os.Args[1:]
+ for _, arg := range args {
+  if arg == "--contract" {
+   if len(args) < 4 || args[1] != "with spaces" || args[2] != "" || args[3] != "café" { panic(fmt.Sprintf("argument preservation: %#v", args)) }
+   if os.Getenv("TEST_TMPDIR") == "" || os.Getenv("XML_OUTPUT_FILE") == "" { panic("test protocol missing") }
+  }
+  if arg == "--isolated" {
+   const state = `C:\rules-wine-fixture-state`
+   if _, err := os.Stat(state); err == nil { panic("shared writable prefix") }
+   if err := os.WriteFile(state, []byte("private"), 0600); err != nil { panic(err) }
+  }
+ }
+ for i, arg := range args {
+  if strings.HasPrefix(arg, "@") {
+   data, err := os.ReadFile(strings.TrimPrefix(arg, "@")); if err != nil { panic(err) }
+   args[i] = strings.TrimSpace(string(data))
+  }
+ }
  if len(args) > 0 && args[0] == "--child" { fmt.Println("child-ok"); return }
  if len(args) > 0 && args[0] == "--exit" { n, _ := strconv.Atoi(args[1]); os.Exit(n) }
  if len(args) > 0 && args[0] == "--sleep" { time.Sleep(300*time.Second); return }
@@ -32,5 +49,8 @@ func main() {
  if dir := os.Getenv("TEST_TMPDIR"); dir != "" { if err := os.WriteFile(filepath.Join(dir, "fixture.tmp"), []byte("temporary\n"), 0600); err != nil { panic(err) } }
  if xml := os.Getenv("XML_OUTPUT_FILE"); xml != "" { if err := os.WriteFile(xml, []byte(`<testsuites><testsuite name="wine" tests="1"><testcase name="fixture"/></testsuite></testsuites>`), 0600); err != nil { panic(err) } }
  encoded, _ := json.MarshalIndent(record, "", "  ")
- if len(args) > 0 && args[0] == "--output" { if err := os.WriteFile(args[1], encoded, 0600); err != nil { panic(err) } } else { fmt.Println(string(encoded)) }
+ output := ""
+ for i, arg := range args { if arg == "--output" && i+1 < len(args) { output = args[i+1] } }
+ if output != "" { if err := os.WriteFile(output, encoded, 0600); err != nil { panic(err) } } else { fmt.Println(string(encoded)) }
+ for _, arg := range args { if arg == "--hold" { sleeper := exec.Command(exe, "--sleep"); if err := sleeper.Start(); err != nil { panic(err) }; time.Sleep(300*time.Second) } }
 }

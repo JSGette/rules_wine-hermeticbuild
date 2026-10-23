@@ -19,7 +19,7 @@ def _runtime_impl(ctx):
         fail("runtime_probe requires a Wine execution platform")
     out = ctx.actions.declare_file(ctx.label.name + ".json")
     config = ctx.actions.declare_file(ctx.label.name + ".config.json")
-    ctx.actions.write(config, json.encode({"backend": "wine", "arch": "x86_64", "loader": info.runtime.loader.path, "server": info.runtime.server.path, "payload": ctx.file.binary.path, "args": ["--output", "{windows_path:" + out.path + "}", "a b", "", "café"]}))
+    ctx.actions.write(config, json.encode({"backend": "wine", "runtime_env": info.runtime.env, "arch": "x86_64", "loader": info.runtime.loader.path, "server": info.runtime.server.path, "payload": ctx.file.binary.path, "args": ["--output", "{windows_path:" + out.path + "}", "a b", "", "café"]}))
     ctx.actions.run(executable = info.launcher, arguments = ["--config", config.path], inputs = depset([config, ctx.file.binary], transitive = [info.runtime.files]), outputs = [out], toolchain = Label("//wine:runner_x86_64_toolchain_type"), mnemonic = "WineRuntimeProbe")
     return [DefaultInfo(files = depset([out]))]
 
