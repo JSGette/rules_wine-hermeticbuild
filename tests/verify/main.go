@@ -3,18 +3,23 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
 )
 
-type config struct{ Launcher, Loader, Server, Payload, WrongArch, WrongLoader string }
+type config struct {
+	Launcher, Loader, Server, Payload, WrongArch, WrongLoader string
+	AdapterCLI                                                bool
+}
 type record struct {
 	Args  []string
 	Child string
@@ -36,6 +41,36 @@ func read(path string) record {
 	must(json.Unmarshal(data, &r))
 	return r
 }
+func verifyAdapterCLI(c config, dir string) {
+	adapter := filepath.Join(dir, "adapter")
+	must(os.Symlink(c.Launcher, adapter))
+	content, err := json.Marshal(map[string]any{"backend": "wine", "arch": "x86_64", "loader": c.Loader, "server": c.Server, "payload": c.Payload})
+	must(err)
+	must(os.WriteFile(adapter+".json", content, 0600))
+	failures := []string{}
+	for index, prefix := range [][]string{{"--config", "payload-config.json"}, {"--", "literal"}} {
+		output := filepath.Join(dir, fmt.Sprintf("adapter-%d.json", index))
+		args := append(append([]string{}, prefix...), "--output", "{windows_path:"+output+"}")
+		runContext, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+		cmd := exec.CommandContext(runContext, adapter, args...)
+		cmd.Env = append(os.Environ(), "XML_OUTPUT_FILE=", "TEST_SHARD_STATUS_FILE=")
+		log, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("prefix %q: %v\n%s", prefix, err, log))
+			continue
+		}
+		actual := read(output).Args
+		if len(actual) < len(prefix) || !reflect.DeepEqual(actual[:len(prefix)], prefix) {
+			failures = append(failures, fmt.Sprintf("prefix %q became %q", prefix, actual))
+		}
+	}
+	if len(failures) > 0 {
+		panic(strings.Join(failures, "\n"))
+	}
+	fmt.Println("PASS: adapter forwards leading --config and literal -- exactly; adjacent configuration remains authoritative")
+}
+
 func main() {
 	data, err := os.ReadFile(os.Args[0] + ".json")
 	must(err)
@@ -49,6 +84,10 @@ func main() {
 	dir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "contract-")
 	must(err)
 	defer os.RemoveAll(dir)
+	if c.AdapterCLI {
+		verifyAdapterCLI(c, dir)
+		return
+	}
 	count := 0
 	launch := func(payload string, args []string) (*exec.Cmd, *bytes.Buffer) {
 		count++

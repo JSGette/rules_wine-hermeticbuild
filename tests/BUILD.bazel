@@ -166,3 +166,11 @@ param_action(
     name = "param_file",
     binary = "fixture/fixture_x86_64.exe",
 )
+
+runtime_contract_test(
+    name = "adapter_cli_test",
+    timeout = "moderate",
+    adapter_cli_only = True,
+    payload = "fixture/fixture_x86_64.exe",
+    wrong_arch = "fixture/fixture_aarch64.exe",
+)

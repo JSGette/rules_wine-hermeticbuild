@@ -118,15 +118,19 @@ load("@rules_wine//wine:actions.bzl", "windows_actions")
 
 def _impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".txt")
-    args = ctx.actions.args()
-    args.add("--output")
-    args.add(windows_actions.path(ctx, out, arch = "x86_64", exec_group = "windows"))
-    args.use_param_file("@%s", use_always = True)  # Only if your tool supports it.
+    response = ctx.actions.args()
+    response.add_all(["opaque value", "café"])
+    response.use_param_file("@%s", use_always = True)  # Only if your tool supports it.
+    response.set_param_file_format("multiline")
     windows_actions.run(
         ctx,
         executable = ctx.attr.tool[DefaultInfo].files_to_run,
         arch = "x86_64",
-        arguments = [args],
+        arguments = [
+            "--output",
+            windows_actions.path(ctx, out, arch = "x86_64", exec_group = "windows"),
+            response,
+        ],
         outputs = [out],
         exec_group = "windows",
     )

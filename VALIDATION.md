@@ -203,3 +203,13 @@ Add same-CPU native/Wine runner toolchains, pinned/custom archive acquisition,
 private Wine lifecycle supervision, and action/executable/test adapters. Linux
 x86_64 behavior is verified on real remote workers; native Windows, ARM64 Linux,
 and experimental macOS runtime limits are explicitly recorded.
+
+Review regression: adapter argv ownership. The real Linux `//tests:adapter_cli_test`
+failed on the unmodified runtime: leading `--config payload-config.json` attempted
+to open the payload argument as supervisor configuration (exit125), and leading
+`--` disappeared from the fixture's recorded argv. The same regression passed
+with adjacent adapter configuration taking precedence and internal flags parsed
+only by standalone supervisor mode. The test executes an actual Windows PE and
+checks recorded argument prefixes, with75-second per-invocation bounds. README's
+parameter-file example now keeps converted output paths on argv and opaque
+response content in its Args parameter file.

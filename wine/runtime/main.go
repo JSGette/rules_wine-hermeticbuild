@@ -390,14 +390,18 @@ func main() {
 	}
 	config := self + ".json"
 	args := os.Args[1:]
-	if len(args) >= 2 && args[0] == "--config" {
+	// Adjacent configuration identifies an adapter: its entire argv belongs to
+	// the payload, including --config and --. Internal flags are parsed only
+	// for the standalone supervisor, which has no adjacent configuration.
+	data, err := os.ReadFile(config)
+	if os.IsNotExist(err) && len(args) >= 2 && args[0] == "--config" {
 		config = args[1]
 		args = args[2:]
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
+		data, err = os.ReadFile(config)
 	}
-	if len(args) > 0 && args[0] == "--" {
-		args = args[1:]
-	}
-	data, err := os.ReadFile(config)
 	if err != nil {
 		fatal(err)
 	}
