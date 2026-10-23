@@ -41,5 +41,8 @@ def action_runfiles(ctx, runfiles, name):
         ctx.actions.write(file, "")
         entries[key] = file
     manifest = ctx.actions.declare_file(name + ".runfiles_manifest")
-    ctx.actions.write(manifest, "".join([" " + _escape(key) + " " + _escape(entries[key].path) + "\n" for key in sorted(entries)]))
+    ctx.actions.write(manifest, "".join([
+        " " + _escape(key) + " " + _escape(entries[key].path) + "\n"
+        for key in sorted(entries)
+    ]))
     return struct(manifest = manifest, files = depset([manifest] + entries.values()), entries = entries)

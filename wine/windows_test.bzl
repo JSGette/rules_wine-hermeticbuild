@@ -3,7 +3,14 @@
 load("//wine/private:adapter.bzl", "adapter_attrs", "adapter_impl")
 
 def _rule(arch):
-    return rule(implementation = adapter_impl, test = True, attrs = adapter_attrs(arch, "test"), exec_groups = {"test": exec_group(toolchains = [Label("//wine:test_adapter_" + arch + "_toolchain_type")])})
+    return rule(
+        implementation = adapter_impl,
+        test = True,
+        attrs = adapter_attrs(arch, "test"),
+        exec_groups = {
+            "test": exec_group(toolchains = [Label("//wine:test_adapter_" + arch + "_toolchain_type")]),
+        },
+    )
 
 _x86_64_test = _rule("x86_64")
 _aarch64_test = _rule("aarch64")

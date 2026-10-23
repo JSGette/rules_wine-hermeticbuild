@@ -16,7 +16,8 @@ def adapter_impl(ctx):
     arch = ctx.attr._arch
     group = ctx.attr._group
     adapter_type = Label("//wine:" + ("adapter_" if group == "default" else "test_adapter_") + arch + "_toolchain_type")
-    runner = ctx.toolchains[adapter_type].windows if group == "default" else ctx.exec_groups[group].toolchains[adapter_type].windows
+    toolchains = ctx.toolchains if group == "default" else ctx.exec_groups[group].toolchains
+    runner = toolchains[adapter_type].windows
     if not runner.launcher:
         fail("adapter toolchain requires an executable launcher")
     binary = payload(ctx, arch)
@@ -27,7 +28,12 @@ def adapter_impl(ctx):
         "backend": runner.backend,
         "arch": arch,
         "payload": runfile_path(ctx, binary.file),
-        "args": expand_arguments(ctx, ctx.attr.binary + ctx.attr.data, runfiles = True, runfile_entries = runfile_entries(ctx, binary.runfiles)),
+        "args": expand_arguments(
+            ctx,
+            ctx.attr.binary + ctx.attr.data,
+            runfiles = True,
+            runfile_entries = runfile_entries(ctx, binary.runfiles),
+        ),
         "env": ctx.attr.env,
         "runfiles": True,
     }
@@ -40,7 +46,10 @@ def adapter_impl(ctx):
         })
         runtime = [runner.runtime.files]
     ctx.actions.write(config, json.encode(config_data))
-    runfiles = ctx.runfiles(files = [config, executable, runner.launcher.executable], transitive_files = depset(transitive = runtime)).merge_all([binary.runfiles, runner.runfiles])
+    runfiles = ctx.runfiles(
+        files = [config, executable, runner.launcher.executable],
+        transitive_files = depset(transitive = runtime),
+    ).merge_all([binary.runfiles, runner.runfiles])
     return [DefaultInfo(files = depset([executable, config]), executable = executable, runfiles = runfiles)]
 
 def adapter_attrs(arch, group):

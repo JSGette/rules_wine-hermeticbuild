@@ -47,7 +47,13 @@ def _rule(arch):
         "arguments": attr.string_list(),
         "env": attr.string_dict(),
     })
-    return rule(implementation = _impl, attrs = attrs, exec_groups = {"windows": exec_group(toolchains = [windows_actions.toolchain_type(arch)])})
+    return rule(
+        implementation = _impl,
+        attrs = attrs,
+        exec_groups = {
+            "windows": exec_group(toolchains = [windows_actions.toolchain_type(arch)]),
+        },
+    )
 
 # CPU-specific toolchain requirements are static; final outputs stay in the
 # caller's configuration, including when that target has a different CPU.

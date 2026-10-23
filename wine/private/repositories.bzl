@@ -8,6 +8,9 @@ def _impl(ctx):
         "",
     ]))
 
-registration_repository = repository_rule(implementation = _impl, attrs = {
-    "distributions": attr.string(mandatory = True),
-})
+registration_repository = repository_rule(
+    implementation = _impl,
+    attrs = {
+        "distributions": attr.string(mandatory = True),
+    },
+)

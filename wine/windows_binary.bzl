@@ -3,7 +3,12 @@
 load("//wine/private:adapter.bzl", "adapter_attrs", "adapter_impl")
 
 def _rule(arch):
-    return rule(implementation = adapter_impl, executable = True, attrs = adapter_attrs(arch, "default"), toolchains = [Label("//wine:adapter_" + arch + "_toolchain_type")])
+    return rule(
+        implementation = adapter_impl,
+        executable = True,
+        attrs = adapter_attrs(arch, "default"),
+        toolchains = [Label("//wine:adapter_" + arch + "_toolchain_type")],
+    )
 
 # Toolchain requirements are static in Bazel 8.5. The CPU-specific type selects
 # a same-CPU executor without constraining the payload/output target platform.

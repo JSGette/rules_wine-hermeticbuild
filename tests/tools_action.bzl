@@ -15,7 +15,15 @@ def _impl(ctx):
         # A directly addressed File is an input. FTR runfiles have their own
         # logical layout and do not imply this execroot path is materialized.
         kwargs["runtime_files"] = [ctx.file.extra_data]
-    windows_actions.run(ctx, executable = ctx.file.binary, arch = "x86_64", arguments = arguments, outputs = [output], exec_group = group, **kwargs)
+    windows_actions.run(
+        ctx,
+        executable = ctx.file.binary,
+        arch = "x86_64",
+        arguments = arguments,
+        outputs = [output],
+        exec_group = group,
+        **kwargs
+    )
     return [DefaultInfo(files = depset([output]))]
 
 tools_action = rule(
@@ -28,5 +36,7 @@ tools_action = rule(
         "default_group": attr.bool(),
     },
     toolchains = [windows_actions.toolchain_type("x86_64")],
-    exec_groups = {"windows": exec_group(toolchains = [windows_actions.toolchain_type("x86_64")])},
+    exec_groups = {
+        "windows": exec_group(toolchains = [windows_actions.toolchain_type("x86_64")]),
+    },
 )

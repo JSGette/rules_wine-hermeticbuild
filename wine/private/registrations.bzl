@@ -33,7 +33,12 @@ def register_runners(distributions):
                 **runtime
             )
             if is_native:
-                windows_runner_toolchain(name = key + "_adapter_impl", arch = arch, backend = "native", launcher = "@rules_wine//wine/runtime:supervisor")
+                windows_runner_toolchain(
+                    name = key + "_adapter_impl",
+                    arch = arch,
+                    backend = "native",
+                    launcher = "@rules_wine//wine/runtime:supervisor",
+                )
             constraints = ["@platforms//os:" + os, "@platforms//cpu:" + arch]
             for kind in ["runner", "adapter", "test_adapter"]:
                 native.toolchain(

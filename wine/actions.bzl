@@ -20,14 +20,30 @@ def path(ctx, file, arch, format = "%s", exec_group = "default"):
     Returns:
         A path argument formatted for the selected executor.
     """
-    runner = (ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains)[toolchain_type(arch)].windows
+    toolchains = ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains
+    runner = toolchains[toolchain_type(arch)].windows
     value = file.path if type(file) == "File" else file
     return format % (path_marker(value) if runner.backend == "wine" else value)
 
-def _run(ctx, *, executable, arch, outputs, arguments = [], inputs = [], env = {}, runtime_files = [], tools = [], exec_group = "default", mnemonic = "WindowsRun", progress_message = None, **kwargs):
+def _run(
+        ctx,
+        *,
+        executable,
+        arch,
+        outputs,
+        arguments = [],
+        inputs = [],
+        env = {},
+        runtime_files = [],
+        tools = [],
+        exec_group = "default",
+        mnemonic = "WindowsRun",
+        progress_message = None,
+        **kwargs):
     if not outputs:
         fail("Windows actions require at least one output to identify their configuration")
-    runner = (ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains)[toolchain_type(arch)].windows
+    toolchains = ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains
+    runner = toolchains[toolchain_type(arch)].windows
     payload = executable.executable if type(executable) == "FilesToRunProvider" else executable
     input_set = inputs if type(inputs) == "depset" else depset(inputs)
 
@@ -75,7 +91,11 @@ def _run(ctx, *, executable, arch, outputs, arguments = [], inputs = [], env = {
         outputs = outputs,
         # These describe the Windows payload. A custom native launcher must
         # discover its own FilesToRunProvider runfiles before starting it.
-        env = {key: value for key, value in env.items() if key not in ["RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY"]},
+        env = {
+            key: value
+            for key, value in env.items()
+            if key not in ["RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY"]
+        },
         tools = tools,
         exec_group = action_group,
         toolchain = toolchain_type(arch),
