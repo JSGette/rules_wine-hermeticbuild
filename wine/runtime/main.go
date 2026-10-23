@@ -240,7 +240,7 @@ func invoke(c configuration, extra []string) int {
 		fmt.Fprintln(os.Stderr, "rules_wine: CPU translation is unsupported")
 		return 125
 	}
-	resolve := func(path string) string {
+	resolve := func(path string, canonicalize bool) string {
 		if path == "" {
 			return path
 		}
@@ -253,13 +253,18 @@ func invoke(c configuration, extra []string) int {
 		if err != nil {
 			fatal(err)
 		}
+		// Preserve payload runfiles/symlink layout so adjacent DLL lookup sees
+		// the declared logical directory, not the backing source directory.
+		if !canonicalize {
+			return path
+		}
 		canonical, err := filepath.EvalSymlinks(path)
 		if err != nil {
 			fatal(err)
 		}
 		return canonical
 	}
-	c.Payload, c.Loader, c.Server = resolve(c.Payload), resolve(c.Loader), resolve(c.Server)
+	c.Payload, c.Loader, c.Server = resolve(c.Payload, false), resolve(c.Loader, true), resolve(c.Server, true)
 	if err := validatePE(c.Payload, c.Arch); err != nil {
 		fmt.Fprintln(os.Stderr, "rules_wine:", err)
 		return 125

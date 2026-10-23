@@ -239,3 +239,12 @@ adapter_action(
     name = "location_tool",
     tool = "location_binary",
 )
+
+runtime_contract_test(
+    name = "payload_layout_test",
+    timeout = "moderate",
+    companion = "fixture/companion.dll",
+    payload = "fixture/fixture_x86_64.exe",
+    payload_layout = True,
+    wrong_arch = "fixture/fixture_aarch64.exe",
+)

@@ -17,8 +17,8 @@ import (
 )
 
 type config struct {
-	Launcher, Loader, Server, Payload, WrongArch, WrongLoader string
-	AdapterCLI                                                bool
+	Launcher, Loader, Server, Payload, WrongArch, WrongLoader, Companion string
+	AdapterCLI, PayloadLayout                                            bool
 }
 type record struct {
 	Args  []string
@@ -71,12 +71,47 @@ func verifyAdapterCLI(c config, dir string) {
 	fmt.Println("PASS: adapter forwards leading --config and literal -- exactly; adjacent configuration remains authoritative")
 }
 
+func verifyPayloadLayout(c config, dir string) {
+	for _, name := range []string{"source", "generated", "logical"} {
+		must(os.Mkdir(filepath.Join(dir, name), 0700))
+	}
+	executable, err := os.ReadFile(c.Payload)
+	must(err)
+	dll, err := os.ReadFile(c.Companion)
+	must(err)
+	must(os.WriteFile(filepath.Join(dir, "source", "app.exe"), executable, 0700))
+	must(os.WriteFile(filepath.Join(dir, "generated", "companion.dll"), dll, 0600))
+	logical := filepath.Join(dir, "logical", "app.exe")
+	must(os.Symlink("../source/app.exe", logical))
+	must(os.Symlink("../generated/companion.dll", filepath.Join(dir, "logical", "companion.dll")))
+	output := filepath.Join(dir, "layout.json")
+	value, err := json.Marshal(map[string]any{"backend": "wine", "arch": "x86_64", "loader": c.Loader, "server": c.Server, "payload": logical, "args": []string{"--dll", "--output", "{windows_path:" + output + "}"}})
+	must(err)
+	config := filepath.Join(dir, "layout.config.json")
+	must(os.WriteFile(config, value, 0600))
+	runContext, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(runContext, c.Launcher, "--config", config)
+	cmd.Env = append(os.Environ(), "XML_OUTPUT_FILE=", "TEST_SHARD_STATUS_FILE=")
+	log, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Sprintf("logical payload/DLL adjacency: %v\n%s", err, log))
+	}
+	if read(output).Child != "child-ok" {
+		panic("logical payload child did not execute")
+	}
+	fmt.Println("PASS: symlinked logical payload loads adjacent generated DLL and executes child")
+}
+
 func main() {
 	data, err := os.ReadFile(os.Args[0] + ".json")
 	must(err)
 	var c config
 	must(json.Unmarshal(data, &c))
 	c.Launcher, c.Loader, c.Server, c.Payload, c.WrongArch, c.WrongLoader = locate(c.Launcher), locate(c.Loader), locate(c.Server), locate(c.Payload), locate(c.WrongArch), locate(c.WrongLoader)
+	if c.Companion != "" {
+		c.Companion = locate(c.Companion)
+	}
 	originalPayload, err := os.ReadFile(c.Payload)
 	must(err)
 	originalLoader, err := os.ReadFile(c.Loader)
@@ -84,6 +119,10 @@ func main() {
 	dir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "contract-")
 	must(err)
 	defer os.RemoveAll(dir)
+	if c.PayloadLayout {
+		verifyPayloadLayout(c, dir)
+		return
+	}
 	if c.AdapterCLI {
 		verifyAdapterCLI(c, dir)
 		return

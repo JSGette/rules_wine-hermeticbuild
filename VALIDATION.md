@@ -241,3 +241,10 @@ bare locations and locations lists retain their expression semantics. Both tests
 pass. A separate exec-configured adapter action tool read generated JSON and an
 external file and emitted a canonical Windows path for a bare location; its JSON
 artifact was inspected. windows_run action execroot expansion is unchanged.
+
+Review regression: logical payload layout. Focused real Linux test creates actual
+symlinks logical/app.exe -> source/app.exe and logical/companion.dll -> a generated
+DLL in another directory. It failed before the fix while searching source/ for
+the DLL. The same test now passes, verifies the DLL's exported function and a
+child process, and inspects its JSON result. Only loader/server paths are
+canonicalized; payload execution retains the logical absolute runfiles path.
