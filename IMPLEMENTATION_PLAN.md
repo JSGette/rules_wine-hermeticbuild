@@ -165,7 +165,7 @@ an explicit architecture declaration, with executable-header checks in validatio
 Proposed runner provider data:
 
 - backend: native or wine; supported payload architecture.
-- supervisor: optional FilesToRunProvider for the selected executor.
+- supervisor: optional File built for the selected executor.
 - wine runtime: loader, server, complete files depset, layout/configuration data.
 - immutable distribution identity and environment defaults.
 - documented runtime requirements and version metadata.
@@ -173,6 +173,9 @@ Proposed runner provider data:
 Native toolchains have no Wine runtime dependency. Also expose a Wine-specific
 provider/toolchain rule for advanced consumers and custom distributions; the
 generic action/test API should not require reading Wine implementation details.
+The native action runner has no supervisor dependency. Executable adapters use a
+separate source-built supervisor toolchain; tests select an adapter through their
+test execution group without target-platform constraints.
 
 ## 6. Module extension and runtime acquisition
 
@@ -217,14 +220,14 @@ both the simple custom-URL route and the complete toolchain override route.
 
 ## 7. Wine execution lifecycle
 
-Use one small native supervisor for Linux. Keep shell utilities, Python, and
-machine-installed Wine out of the production execution path. Distribute pinned,
-architecture-correct supervisor binaries; its maintenance build dependencies
-remain development-only. Decide release packaging before the first usable release
-so downstream users do not need a compiler to consume the ruleset.
+Build one C++ supervisor from source in the selected execution configuration for
+Linux, macOS, and Windows. Keep shell utilities, Python, and machine-installed Wine
+out of the production execution path. `@llvm` and `rules_cc` are production
+dependencies; downstream adapter/Wine builds compile the supervisor on demand.
+Native build actions execute their PE directly and need no supervisor.
 
-Reuse hermetic_launcher for executable/runfiles entrypoints where appropriate.
-It is not a substitute for the supervisor's initialization and cleanup lifecycle.
+The current adapter retains its own entrypoint/runfiles logic because
+hermetic_launcher does not cover its environment and path-conversion contract.
 
 For each invocation:
 
@@ -261,7 +264,7 @@ The three layers below were implemented, reviewed, and merged into main.
 
 The acceptance lists below remain the intended validation criteria, not a claim
 that every platform has executed. tests/README.md records verification commands and the
-explicit native Windows, ARM64, source-compiler and experimental macOS limits.
+explicit native Windows, ARM64, and experimental macOS limits.
 
 1. **Runtime toolchains and acquisition** — extension, providers, native/Wine
    registrations, architecture modeling, and an executable runtime probe.
@@ -304,7 +307,8 @@ The plan is not authorization to publish branches, releases, or PRs.
 - Tests run through the runner selected by the test execution group.
 - Validate temp/output directories, XML output, sharding variables, and timeouts.
 - External-consumer smoke module uses the documented setup and a custom archive.
-- LLVM and any fixture compiler are development-only; inspect the consumer graph.
+- LLVM builds the production supervisor; fixture compilers stay test-only. Inspect
+  the downstream consumer graph for a source-built executor-native supervisor.
 - Exercise the supported Bazel minimum and newer test-resolution behavior.
 - Run sandboxed Linux and native Windows x86_64 tests; run at least one remote
   Linux action/test and inspect outputs and cache reuse before claiming RBE support.

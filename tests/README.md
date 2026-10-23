@@ -52,31 +52,31 @@ The consumer exercises the public module setup. The script tests a named custom
 archive through `http_archive`; supplying an incorrect checksum must fail fetching.
 Keep fixture compilers and test helpers out of production dependency paths.
 
-Bazel 7.7.0, 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
+Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
 `USE_BAZEL_VERSION` when running the common suite. Bazel 9's execution-group check
 lives separately because its attributes are unavailable in older versions:
 
 ```sh
-bazel test //tests/bazel9:wine_group_test --config=remote \
+bazel aquery 'mnemonic("TestRunner", //tests/bazel9:wine_group_test)' --config=remote \
   --extra_execution_platforms=//platforms:windows_x86_64,//platforms:remote_linux_x86_64
 ```
 
 Inspect its `TestRunner` action: the actual test group must select Linux/Wine even
-when the default group selects Windows.
+when the default group selects Windows. Running this synthetic mismatch also
+requires a real Windows executor: source-building the Linux supervisor from the
+default Windows execution configuration invokes a Windows-hosted C++ compiler.
 
-## Maintenance binaries
+## Source build and fixture maintenance
 
 ```sh
-tools/build_runtime.sh /absolute/path/to/go1.25.3
-tools/build_fixtures.sh /absolute/path/to/go1.25.3
-/absolute/path/to/go1.25.3 -C wine/runtime test ./...
-(cd wine/runtime && shasum -a 256 -c SHA256SUMS)
+tools/build_runtime.sh --config=remote
+tools/build_fixtures.sh --config=remote
 (cd tests/fixture && shasum -a 256 -c SHA256SUMS)
 ```
 
-The fixture build also needs clang/lld. These are maintenance tools; consuming the
-ruleset needs no compiler. Keep source and checked-in binaries in sync. Binary
-release packaging can change independently of the public rules.
+The supervisor builds from source for each executor and is not checked in. Fixture
+maintenance also needs clang/lld. Keep fixture sources and checked-in test binaries
+in sync.
 
 The adapter currently also handles environment overrides, Windows path markers,
 and arbitrary configured argument lists. `hermetic_launcher` v0.0.16 handles
@@ -93,8 +93,12 @@ libraries. Docker's x86_64 emulation on an ARM64 host failed the raw Wine baseli
 and is not a substitute for native execution testing.
 
 Native Windows, Linux ARM64 and Intel macOS execution remain untested. Windows
-action graphs verify selection and inputs, not runtime behavior. Full source
-compiler/SDK integration and native local Linux sandbox execution remain unverified.
+action graphs verify selection and inputs, not runtime behavior. Native local Linux
+sandbox execution remains unverified. The pinned `@llvm` macOS SDK URL returned 403
+during the source-build check. Both macOS architectures compiled using a temporary
+archive of the locally installed SDK; downstream macOS builds need a reachable SDK
+archive supplied through `@llvm`'s `osx.from_archive` extension until its default
+URL works again.
 
 An experimental native ARM64 macOS build
 ([DiagBridge 0.2.5](https://github.com/citi94/diagbridge/releases/tag/v0.2.5)) ran its

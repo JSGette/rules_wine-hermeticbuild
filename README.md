@@ -4,16 +4,16 @@ Run Windows executables as Bazel actions, executable tools, and tests. Wine runs
 same-CPU payloads on Linux or macOS; Windows actions execute the payload directly.
 The rules do not own your compiler, SDK, language, or final output platform.
 
-Bazel 7.7.0, 8.5.0 and 9.3.1 are exercised. Initial runtime status:
+Bazel 8.5.0 and 9.3.1 are exercised. Initial runtime status:
 
 | Executor / Windows payload | Acquisition | Validation |
 | --- | --- | --- |
 | Linux x86_64 / x86_64 | Pinned Wine 11.0 default | Remote actions/tests and lifecycle pass |
-| Linux ARM64 / ARM64 | User-supplied native archive | Configuration implemented; execution untested |
+| Linux ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled; execution untested |
 | Windows x86_64 / x86_64 | No Wine required | Direct-action graph verified; execution untested |
-| Windows ARM64 / ARM64 | No Wine required | Configuration implemented; execution untested |
-| macOS Intel / x86_64 | User-supplied native archive | Configuration implemented; execution untested |
-| macOS ARM64 / ARM64 | User-supplied native archive | Experimental runtime limitation; see below |
+| Windows ARM64 / ARM64 | No Wine required | Supervisor cross-compiled; direct-action graph verified; execution untested |
+| macOS Intel / x86_64 | User-supplied native archive | Supervisor cross-compiled with local SDK; execution untested |
+| macOS ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled with local SDK; experimental runtime limitation below |
 
 No Rosetta, QEMU, Box64, FEX, x86 payloads, or cross-CPU fallback. The default Wine
 archive contains extra upstream components, but these rules accept only x86_64
@@ -34,6 +34,11 @@ register_toolchains("@wine_toolchains//:all")
 
 Register execution platforms appropriate to your local or remote workers. The
 ruleset does not infer remote worker capabilities from the machine running Bazel.
+The supervisor is a C++ source target built with the execution-platform compiler.
+This module depends on `rules_cc` and `@llvm` and registers `@llvm` C++ toolchains;
+downstream builds compile the supervisor on demand.
+`@llvm` 0.7.6 uses Bazel APIs unavailable in Bazel 7.7, so this source-built
+version requires Bazel 8.5 or newer.
 Native-only Windows consumers can omit `x86_64 = "default"`; native registrations
 then have no Wine archive dependency. Archives are fetched only when referenced.
 
@@ -192,13 +197,17 @@ Wine owns lookup of its builtin programs; no distribution-specific DLL directory
 is assumed.
 
 For a complete override, define `windows_runner_toolchain` from
-`@rules_wine//wine:toolchain.bzl` with `arch`, `backend`, `launcher`, and for Wine
-`loader`, `server`, `files`, `identity`, `requirements`, `env`. Register it against
-`@rules_wine//wine:runner_<arch>_toolchain_type` with executor OS/CPU constraints
-and **no final-output target constraints**. For executable adapters also register
-`adapter_<arch>_toolchain_type` against the same implementation, with matching
-executor and adapter-target OS/CPU constraints. Native overrides omit all Wine
-files. `WindowsRunnerInfo` and `WineRuntimeInfo` expose the advanced contract.
+`@rules_wine//wine:toolchain.bzl`. A Wine implementation needs `arch`, `backend`,
+`launcher`, `loader`, `server`, `files`, `identity`, `requirements`, and `env`; it
+can serve runner, binary adapter, and test adapter registrations. Native Windows
+uses two implementations: a direct action runner without `launcher` or Wine files,
+and an adapter with the source-built launcher but no Wine files. Register each
+against `runner_<arch>_toolchain_type`, `adapter_<arch>_toolchain_type`, or
+`test_adapter_<arch>_toolchain_type` as appropriate. All have executor OS/CPU
+constraints and no final-output constraints. Binary adapters additionally have
+matching target OS/CPU constraints; test adapters follow the test execution group
+and have no target constraints. `WindowsRunnerInfo` and `WineRuntimeInfo` expose
+the advanced contract.
 
 ## Isolation, runtime maintenance and limits
 
@@ -220,11 +229,10 @@ coverage and workers remain future work. Windows adapter descendant cancellation
 has not been runtime-verified. See [testing and maintenance](tests/README.md) for
 the verification commands and platform gaps.
 
-Support binaries are checked in for Linux, Windows and macOS, x86_64 and ARM64.
-Downstream builds need no compiler. Maintenance uses Go 1.25.3 and no third-party
-Go modules: `tools/build_runtime.sh /absolute/path/to/go`; SHA256SUMS records the
-bytes. `tools/build_fixtures.sh` builds development-only payloads with Go and
-clang/lld; these tools never become consumer dependencies.
+The supervisor is compiled from source for the selected execution platform. No
+supervisor binary is checked in. `tools/build_runtime.sh --config=remote` checks
+the six cross-compilation targets; `tools/build_fixtures.sh --config=remote`
+rebuilds development-only fixtures, which are not consumer dependencies.
 
 macOS ARM64 requires a compatible native Wine archive. The experimental build
 evaluated so far could run its bundled programs but failed independent ARM64
