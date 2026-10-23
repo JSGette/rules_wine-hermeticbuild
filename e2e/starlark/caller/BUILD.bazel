@@ -1,0 +1,20 @@
+load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
+
+alias(
+    name = "license_alias",
+    actual = "@mapped_platforms//:LICENSE",
+)
+
+windows_binary(
+    name = "mapped",
+    arch = "x86_64",
+    arguments = [
+        "$(location license_alias)",
+        "$(location @mapped_platforms//:LICENSE)",
+    ],
+    binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
+    data = [
+        "license_alias",
+        "@mapped_platforms//:LICENSE",
+    ],
+)

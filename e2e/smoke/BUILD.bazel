@@ -7,7 +7,7 @@ windows_run(
     arch = "x86_64",
     arguments = [
         "--output",
-        "{windows_path:$@}",
+        "$@",
         "external-consumer",
     ],
     binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",

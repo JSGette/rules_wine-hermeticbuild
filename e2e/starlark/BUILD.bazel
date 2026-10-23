@@ -1,0 +1,267 @@
+load("@rules_wine//wine:toolchain.bzl", "windows_runner_toolchain")
+load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
+load("@rules_wine//wine:windows_run.bzl", "windows_run")
+load("@rules_wine//wine:windows_test.bzl", "windows_test")
+load(":audit.bzl", "collision", "stub", "symlink_data")
+
+package(default_visibility = ["//visibility:public"])
+
+platform(
+    name = "audit_exec",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+platform(
+    name = "audit_windows",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+windows_runner_toolchain(
+    name = "native_implementation",
+    arch = "x86_64",
+    backend = "native",
+)
+
+toolchain(
+    name = "native_runner",
+    exec_compatible_with = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+    toolchain = ":native_implementation",
+    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+)
+
+stub(
+    name = "launcher",
+    data = ["launcher_data"],
+)
+
+stub(name = "built_loader")
+
+windows_runner_toolchain(
+    name = "generated_implementation",
+    arch = "x86_64",
+    backend = "wine",
+    launcher = ":launcher",
+    loader = ":built_loader",
+    server = "server",
+)
+
+toolchain(
+    name = "generated_runner",
+    toolchain = ":generated_implementation",
+    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+)
+
+windows_runner_toolchain(
+    name = "implementation",
+    arch = "x86_64",
+    backend = "wine",
+    launcher = ":launcher",
+    loader = "loader",
+    server = "server",
+)
+
+toolchain(
+    name = "runner",
+    toolchain = ":implementation",
+    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+)
+
+toolchain(
+    name = "adapter",
+    toolchain = ":implementation",
+    toolchain_type = "@rules_wine//wine:adapter_x86_64_toolchain_type",
+)
+
+toolchain(
+    name = "test_adapter",
+    toolchain = ":implementation",
+    toolchain_type = "@rules_wine//wine:test_adapter_x86_64_toolchain_type",
+)
+
+collision(
+    name = "collision",
+    binary = "payload.exe",
+)
+
+filegroup(
+    name = "two",
+    srcs = [
+        "data/a",
+        "data/b",
+    ],
+)
+
+alias(
+    name = "adapter_alias",
+    actual = "root_location",
+)
+
+alias(
+    name = "space_alias",
+    actual = "data/file name",
+)
+
+alias(
+    name = "dollar_alias",
+    actual = "data/cash$money",
+)
+
+alias(
+    name = "quote_alias",
+    actual = "data/quote'file",
+)
+
+windows_binary(
+    name = "selected_aliases",
+    arch = "x86_64",
+    arguments = select({"//conditions:default": [
+        "$(location space_alias)",
+        "$(location dollar_alias)",
+        "$(location quote_alias)",
+    ]}),
+    binary = "payload.exe",
+    data = select({"//conditions:default": [
+        "dollar_alias",
+        "quote_alias",
+        "space_alias",
+    ]}),
+)
+
+windows_binary(
+    name = "executable_locations",
+    arch = "x86_64",
+    arguments = [
+        "$(location adapter_alias)",
+        "$(locations adapter_alias)",
+    ],
+    binary = "payload.exe",
+    data = ["adapter_alias"],
+)
+
+windows_binary(
+    name = "ambiguous",
+    arch = "x86_64",
+    arguments = ["$(locations :two)"],
+    binary = "payload.exe",
+    data = [
+        "data/a data/b",
+        ":two",
+    ],
+)
+
+windows_binary(
+    name = "root_location",
+    arch = "x86_64",
+    arguments = ["$(location :a)"],
+    binary = "payload.exe",
+    data = ["a"],
+)
+
+windows_binary(
+    name = "escaped",
+    arch = "x86_64",
+    arguments = ["$$(location :data/a)"],
+    binary = "payload.exe",
+    data = ["data/a"],
+)
+
+windows_binary(
+    name = "braces",
+    arch = "x86_64",
+    arguments = ["$(location :data/a}b)"],
+    binary = "payload.exe",
+    data = ["data/a}b"],
+)
+
+windows_run(
+    name = "dollar_path",
+    srcs = ["data/cash$money"],
+    outs = ["dollar.json"],
+    arch = "x86_64",
+    arguments = ["$(location :data/cash$money)"],
+    binary = "payload.exe",
+)
+
+windows_run(
+    name = "space_action",
+    srcs = ["data/file name"],
+    outs = ["space.json"],
+    arch = "x86_64",
+    arguments = ["$(location :data/file name)"],
+    binary = "payload.exe",
+)
+
+windows_binary(
+    name = "space_adapter",
+    arch = "x86_64",
+    arguments = ["$(location :data/file name)"],
+    binary = "payload.exe",
+    data = ["data/file name"],
+)
+
+windows_run(
+    name = "apparent_platform",
+    outs = ["platform.json"],
+    arch = "x86_64",
+    binary = "payload.exe",
+    target_platform = "@rules_wine//platforms:windows_x86_64",
+)
+
+symlink_data(
+    name = "alias_data",
+    src = "only_via_alias",
+)
+
+windows_run(
+    name = "data_action",
+    outs = ["output.txt"],
+    arch = "x86_64",
+    binary = "payload.exe",
+    data = [":alias_data"],
+)
+
+windows_binary(
+    name = "data_adapter",
+    arch = "x86_64",
+    binary = "payload.exe",
+    data = [":alias_data"],
+)
+
+windows_test(
+    name = "only_test_adapter_test",
+    arch = "x86_64",
+    binary = "payload.exe",
+    tags = ["manual"],
+)
+
+windows_binary(
+    name = "embedded_plural",
+    arch = "x86_64",
+    arguments = ["prefix=$(locations :two)"],
+    binary = "payload.exe",
+    data = [":two"],
+)
+
+windows_binary(
+    name = "single_multiple",
+    arch = "x86_64",
+    arguments = ["$(location :two)"],
+    binary = "payload.exe",
+    data = [":two"],
+)
+
+windows_binary(
+    name = "undeclared",
+    arch = "x86_64",
+    arguments = ["$(location :a)"],
+    binary = "payload.exe",
+)

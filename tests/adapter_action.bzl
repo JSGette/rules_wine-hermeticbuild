@@ -3,7 +3,7 @@
 def _impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     args = ctx.actions.args()
-    args.add_all(["--output", "{windows_path:" + output.path + "}", "adapter-tool"])
+    args.add_all(["--output", "{windows_path:" + json.encode(output.path) + "}", "adapter-tool"])
     ctx.actions.run(executable = ctx.attr.tool[DefaultInfo].files_to_run, arguments = [args], outputs = [output], mnemonic = "AdapterTool")
     return [DefaultInfo(files = depset([output]))]
 

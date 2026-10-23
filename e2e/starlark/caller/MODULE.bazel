@@ -1,0 +1,7 @@
+module(
+    name = "caller",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_wine", version = "0.1.0")
+bazel_dep(name = "platforms", version = "1.0.0", repo_name = "mapped_platforms")

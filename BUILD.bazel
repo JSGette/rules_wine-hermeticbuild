@@ -1,1 +1,6 @@
 # Workspace package. Public rules live under //wine.
+
+exports_files(
+    [".bazelversion"],
+    visibility = ["//tests:__pkg__"],
+)

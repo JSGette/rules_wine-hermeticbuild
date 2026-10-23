@@ -151,7 +151,7 @@ wine::Json record(const fs::path &file) {
   return wine::JsonParser(read(file)).parse();
 }
 std::string output_arg(const fs::path &file) {
-  return "{windows_path:" + path_string(file) + "}";
+  return "{windows_path:" + quote(path_string(file)) + "}";
 }
 std::string runtime_config(const Config &c, const fs::path &payload,
                            const std::vector<std::string> &args) {
