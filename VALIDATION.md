@@ -248,3 +248,12 @@ DLL in another directory. It failed before the fix while searching source/ for
 the DLL. The same test now passes, verifies the DLL's exported function and a
 child process, and inspects its JSON result. Only loader/server paths are
 canonicalized; payload execution retains the logical absolute runfiles path.
+
+Review-fix closeout: six focused/existing Linux tests passed together (CLI,
+generated/external locations, actual symlink layout, smoke, lifecycle), invocation
+3cd76a3a-2b98-463d-8fda-78c1253d594b. External consumer passed, invocation
+27408b07-d2f2-4fc5-ba2d-2d3739676794. Minimum Bazel7.7.0 generated-location test
+passed, invocation14014695-ed98-467f-ba53-1967983c099c. Native Windows aquery for
+additional/default-group tools selects direct PE actions with the supplied tool
+providers and no duplicate-keyword or execution-group error. Manifest resolver
+Go tests, support checksums, Buildifier and diff whitespace checks pass.

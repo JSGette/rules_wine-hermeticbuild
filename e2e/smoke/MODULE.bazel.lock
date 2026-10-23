@@ -467,7 +467,7 @@
     },
     "@@rules_wine+//wine/extension:wine.bzl%wine": {
       "general": {
-        "bzlTransitiveDigest": "lrAe2hm6354uZ8qth6Lc99PkiLRlFY9CTqHL91fs01w=",
+        "bzlTransitiveDigest": "dR3AVkixVr4J8J9qHu4RLo49jQ/9F0GzuwJmFa25Vqw=",
         "usagesDigest": "79JmEz+VwuzL8mKkZcCI6ttv9TyDyq/Fny6yq65pbhs=",
         "recordedInputs": [
           "REPO_MAPPING:rules_wine+,bazel_tools bazel_tools"

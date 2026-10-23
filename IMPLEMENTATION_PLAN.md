@@ -255,12 +255,15 @@ runfiles environment values cannot simply be assumed usable by Windows code.
 
 ## 8. Implementation sequence and review boundaries
 
-This directory is currently empty and is not a Git checkout. Before implementation,
-resolve repository initialization/remote setup and inspect any new local changes.
+Historical planning context: this directory was initially empty and not a Git
+checkout. It has since been initialized on main with the recorded plan, and the
+user approved the three-layer stack before implementation. The implemented
+branches are codex/wine-toolchains, codex/wine-actions and codex/wine-tests, tracked
+by gh stack above main. No remote is configured and nothing has been published.
 
-The work will exceed 300–400 lines. Per the supplied AGENTS.md, obtain approval of
-the stack plan before creating branches or writing implementation code. Proposed
-trunk: main, subject to confirming the repository's actual default branch.
+The acceptance lists below remain the intended validation criteria, not a claim
+that every platform has executed. VALIDATION.md records passing checks and the
+explicit native Windows, ARM64, source-compiler and experimental macOS limits.
 
 1. **Runtime toolchains and acquisition** — extension, providers, native/Wine
    registrations, architecture modeling, and an executable runtime probe.
