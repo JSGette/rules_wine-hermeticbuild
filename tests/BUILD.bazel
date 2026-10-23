@@ -1,0 +1,5 @@
+load("//wine:probe.bzl", "runner_probe_x86_64", "runner_probe_aarch64")
+runner_probe_x86_64(name = "probe_x86_64")
+runner_probe_aarch64(name = "probe_aarch64")
+load("//wine:probe.bzl", "runtime_probe")
+runtime_probe(name = "runtime_probe", binary = "fixture/fixture_x86_64.exe")

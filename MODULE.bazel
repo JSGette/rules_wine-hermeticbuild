@@ -1,0 +1,6 @@
+module(name = "rules_wine", version = "0.1.0", bazel_compatibility = [">=7.7.0"])
+bazel_dep(name = "platforms", version = "1.0.0")
+wine = use_extension("//wine/extension:wine.bzl", "wine")
+wine.toolchains(name = "wine_toolchains", x86_64 = "default")
+use_repo(wine, "wine_toolchains")
+register_toolchains("@wine_toolchains//:all", dev_dependency = True)

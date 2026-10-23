@@ -1,0 +1,7 @@
+common --enable_bzlmod
+common --incompatible_strict_action_env
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --test_output=errors
+# Existing user-level BuildBuddy authentication is inherited, never stored here.
+build:remote --remote_executor=grpcs://remote.buildbuddy.io
+build:remote --extra_execution_platforms=//platforms:remote_linux_x86_64
