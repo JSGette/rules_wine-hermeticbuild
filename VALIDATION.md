@@ -213,3 +213,12 @@ only by standalone supervisor mode. The test executes an actual Windows PE and
 checks recorded argument prefixes, with75-second per-invocation bounds. README's
 parameter-file example now keeps converted output paths on argv and opaque
 response content in its Args parameter file.
+
+Review regression: directory entries in runfiles manifests. Focused real-filesystem
+Go regression failed before the fix for a Unicode/space-containing child beneath
+a mapped directory, including an escaped directory key. It now passes and also
+checks longest-prefix selection, exact-entry priority, escaped exact entries and
+segment boundaries. Command: Go1.25.3 `go -C wine/runtime test -run
+TestRunfileManifestDirectoryMappings`. The resolver scans for the longest mapped
+directory and appends the unmatched child path only after exact lookup completes.
+Support executables and SHA256SUMS rebuilt from the same source.

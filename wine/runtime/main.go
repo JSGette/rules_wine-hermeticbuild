@@ -53,6 +53,7 @@ func runfile(path string) (string, error) {
 		manifest = self + ".runfiles_manifest"
 	}
 	if data, err := os.ReadFile(manifest); err == nil {
+		bestKey, bestValue := "", ""
 		for _, line := range strings.Split(string(data), "\n") {
 			escaped := strings.HasPrefix(line, " ")
 			if escaped {
@@ -69,6 +70,14 @@ func runfile(path string) (string, error) {
 			if key == path {
 				return filepath.Abs(value)
 			}
+			// TreeArtifacts may have one manifest entry for the directory.
+			// Keep scanning so an exact entry wins over any directory prefix.
+			if key != "" && strings.HasPrefix(path, key+"/") && len(key) > len(bestKey) {
+				bestKey, bestValue = key, value
+			}
+		}
+		if bestKey != "" {
+			return filepath.Abs(filepath.Join(bestValue, filepath.FromSlash(path[len(bestKey)+1:])))
 		}
 	}
 	return "", fmt.Errorf("runfile %q not found (RUNFILES_DIR/manifest)", path)
