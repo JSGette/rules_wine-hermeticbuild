@@ -21,17 +21,21 @@ namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
 namespace {
-std::string path_string(const fs::path &path) { return path.u8string(); }
+std::string path_string(const fs::path &path) {
+  return path.u8string();
+}
 std::string read(const fs::path &file) {
   std::ifstream in(file, std::ios::binary);
-  if (!in)
+  if (!in) {
     throw std::runtime_error("cannot read " + path_string(file));
+  }
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 void write(const fs::path &file, const std::string &data) {
   std::ofstream out(file, std::ios::binary);
-  if (!out || !(out << data))
+  if (!out || !(out << data)) {
     throw std::runtime_error("cannot write " + path_string(file));
+  }
 }
 std::string quote(const std::string &value) {
   std::string result = "\"";
@@ -54,8 +58,9 @@ std::string quote(const std::string &value) {
 }
 std::string list(const std::vector<std::string> &values) {
   std::string result = "[";
-  for (size_t i = 0; i < values.size(); ++i)
+  for (size_t i = 0; i < values.size(); ++i) {
     result += (i ? "," : "") + quote(values[i]);
+  }
   return result + "]";
 }
 struct Config {
@@ -97,14 +102,16 @@ Process launch(const fs::path &program, const std::vector<std::string> &args,
     std::vector<std::string> strings{path_string(program)};
     strings.insert(strings.end(), args.begin(), args.end());
     std::vector<char *> argv;
-    for (auto &item : strings)
+    for (auto &item : strings) {
       argv.push_back(item.data());
+    }
     argv.push_back(nullptr);
     execv(strings.front().c_str(), argv.data());
     _exit(127);
   }
-  if (pid < 0)
+  if (pid < 0) {
     throw std::runtime_error("fork failed");
+  }
   return {pid, log};
 }
 int wait(const Process &process, std::chrono::seconds timeout = 75s) {
@@ -123,17 +130,20 @@ int wait(const Process &process, std::chrono::seconds timeout = 75s) {
                                : 125;
 }
 void require(bool condition, const std::string &message) {
-  if (!condition)
+  if (!condition) {
     throw std::runtime_error(message);
+  }
 }
 void wait_file(const fs::path &file, const std::vector<fs::path> &logs) {
   auto deadline = std::chrono::steady_clock::now() + 75s;
-  while (!fs::exists(file) && std::chrono::steady_clock::now() < deadline)
+  while (!fs::exists(file) && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(50ms);
+  }
   if (!fs::exists(file)) {
     std::string message = "fixture output missing: " + path_string(file);
-    for (const auto &log : logs)
+    for (const auto &log : logs) {
       message += "\n" + read(log);
+    }
     throw std::runtime_error(message);
   }
 }
@@ -158,8 +168,9 @@ fs::path scratch() {
       "/contract-XXXXXX";
   std::vector<char> chars(pattern.begin(), pattern.end());
   chars.push_back(0);
-  if (!mkdtemp(chars.data()))
+  if (!mkdtemp(chars.data())) {
     throw std::runtime_error("cannot create test scratch");
+  }
   return fs::u8path(chars.data());
 }
 void verify_adapter(const Config &c, const fs::path &dir) {
@@ -177,15 +188,17 @@ void verify_adapter(const Config &c, const fs::path &dir) {
     require(wait(process) == 0, "adapter CLI: " + read(process.log));
     wine::Json result = record(output);
     const auto &actual = result.at("args").elements;
-    for (size_t j = 0; j < prefixes[i].size(); ++j)
+    for (size_t j = 0; j < prefixes[i].size(); ++j) {
       require(actual.size() > j && actual[j].as_string() == prefixes[i][j],
               "adapter consumed payload args");
+    }
   }
   std::cout << "PASS: adapter preserves leading --config and --\n";
 }
 void verify_layout(const Config &c, const fs::path &dir) {
-  for (auto name : {"source", "generated", "logical"})
+  for (auto name : {"source", "generated", "logical"}) {
     fs::create_directory(dir / name);
+  }
   fs::copy_file(c.payload, dir / "source/app.exe");
   fs::copy_file(c.companion, dir / "generated/companion.dll");
   fs::create_symlink("../source/app.exe", dir / "logical/app.exe");
@@ -205,12 +218,14 @@ void verify_layout(const Config &c, const fs::path &dir) {
 }
 bool owned_descendant(const std::string &prefix) {
   DIR *proc = opendir("/proc");
-  if (!proc)
+  if (!proc) {
     return false;
+  }
   bool found = false;
   while (dirent *entry = readdir(proc)) {
-    if (entry->d_name[0] < '0' || entry->d_name[0] > '9')
+    if (entry->d_name[0] < '0' || entry->d_name[0] > '9') {
       continue;
+    }
     std::ifstream input(std::string("/proc/") + entry->d_name + "/environ",
                         std::ios::binary);
     std::string data{std::istreambuf_iterator<char>(input),
@@ -300,12 +315,13 @@ int main(int, char **argv) {
     Config c = config(read(std::string(argv[0]) + ".json"));
     fs::path dir = scratch();
     try {
-      if (c.adapter_cli)
+      if (c.adapter_cli) {
         verify_adapter(c, dir);
-      else if (c.payload_layout)
+      } else if (c.payload_layout) {
         verify_layout(c, dir);
-      else
+      } else {
         verify_lifecycle(c, dir);
+      }
     } catch (...) {
       fs::remove_all(dir);
       throw;

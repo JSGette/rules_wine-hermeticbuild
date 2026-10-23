@@ -22,17 +22,21 @@ struct Json {
     return it == fields.end() ? empty : it->second;
   }
   std::string as_string() const {
-    if (kind == null_value)
+    if (kind == null_value) {
       return {};
-    if (kind != string)
+    }
+    if (kind != string) {
       throw std::runtime_error("expected JSON string");
+    }
     return text;
   }
   bool as_bool() const {
-    if (kind == null_value)
+    if (kind == null_value) {
       return false;
-    if (kind != boolean)
+    }
+    if (kind != boolean) {
       throw std::runtime_error("expected JSON boolean");
+    }
     return flag;
   }
 };
@@ -43,8 +47,9 @@ public:
   Json parse() {
     Json result = value();
     space();
-    if (position_ != input_.size())
+    if (position_ != input_.size()) {
       fail();
+    }
     return result;
   }
 
@@ -56,17 +61,20 @@ private:
   }
   void space() {
     while (position_ < input_.size() &&
-           std::isspace(static_cast<unsigned char>(input_[position_])))
+           std::isspace(static_cast<unsigned char>(input_[position_]))) {
       ++position_;
+    }
   }
   char take() {
-    if (position_ == input_.size())
+    if (position_ == input_.size()) {
       fail();
+    }
     return input_[position_++];
   }
   void expect(char c) {
-    if (take() != c)
+    if (take() != c) {
       fail();
+    }
   }
   bool consume(char c) {
     space();
@@ -81,21 +89,22 @@ private:
     for (int i = 0; i < 4; ++i) {
       char c = take();
       value <<= 4;
-      if (c >= '0' && c <= '9')
+      if (c >= '0' && c <= '9') {
         value |= c - '0';
-      else if (c >= 'a' && c <= 'f')
+      } else if (c >= 'a' && c <= 'f') {
         value |= c - 'a' + 10;
-      else if (c >= 'A' && c <= 'F')
+      } else if (c >= 'A' && c <= 'F') {
         value |= c - 'A' + 10;
-      else
+      } else {
         fail();
+      }
     }
     return value;
   }
   static void utf8(std::string &out, unsigned c) {
-    if (c < 0x80)
+    if (c < 0x80) {
       out += static_cast<char>(c);
-    else if (c < 0x800) {
+    } else if (c < 0x800) {
       out += static_cast<char>(0xc0 | (c >> 6));
       out += static_cast<char>(0x80 | (c & 63));
     } else if (c < 0x10000) {
@@ -114,10 +123,12 @@ private:
     std::string out;
     while (true) {
       char c = take();
-      if (c == '"')
+      if (c == '"') {
         return out;
-      if (static_cast<unsigned char>(c) < 32)
+      }
+      if (static_cast<unsigned char>(c) < 32) {
         fail();
+      }
       if (c != '\\') {
         out += c;
         continue;
@@ -154,11 +165,13 @@ private:
           expect('\\');
           expect('u');
           unsigned low = hex4();
-          if (low < 0xdc00 || low > 0xdfff)
+          if (low < 0xdc00 || low > 0xdfff) {
             fail();
+          }
           code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
-        } else if (code >= 0xdc00 && code <= 0xdfff)
+        } else if (code >= 0xdc00 && code <= 0xdfff) {
           fail();
+        }
         utf8(out, code);
         break;
       }
@@ -202,11 +215,14 @@ private:
                             : c == 'f' ? "alse"
                             : c == 'n' ? "ull"
                                        : nullptr;
-      if (!literal)
+      if (!literal) {
         fail();
-      while (*literal)
-        if (take() != *literal++)
+      }
+      while (*literal) {
+        if (take() != *literal++) {
           fail();
+        }
+      }
       result.kind = c == 'n' ? Json::null_value : Json::boolean;
       result.flag = c == 't';
     }
