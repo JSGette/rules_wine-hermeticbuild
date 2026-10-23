@@ -11,6 +11,7 @@ bazel test //tests:integration --config=remote
 bazel build //tests:generate //tests:transitioned //tests:adapter_tool \
   //tests:dll //tests:response //tests:param_file //tests:location_tool \
   //tests:additional_tools //tests:default_group //tests:default_group_tools \
+  //tests:external_tools //tests:distinct_actions \
   --config=remote
 bazel test //tests:runfiles_test --config=remote --noenable_runfiles
 ```
@@ -21,6 +22,10 @@ sharding, and writable directories. The lifecycle test checks concurrent private
 prefixes, cancellation ownership, descendant cleanup, exit status, architecture
 rejection, and unchanged input files. The layout test creates real symlinks because
 remote execution can materialize ordinary runfiles and hide local layout bugs.
+The argv regression asserts exact records for spaces, empty strings, dollars,
+braces, Unicode, source/generated/external files, escaped expressions and plural
+cardinality. A source-built Windows consumer uses the standard C++ runfiles
+library to verify apparent-repository mapping and alias-only action data.
 
 Inspect the generated JSON files as well as the test results. Use `bazel aquery`
 to inspect executables, platforms, declared tools and inputs. Native actions must
@@ -45,12 +50,20 @@ The lifecycle test, rather than timeout status alone, verifies cleanup.
 
 ```sh
 (cd e2e/smoke && bazel test //:consumer_test --config=remote)
-tools/test_custom_archive.sh /absolute/path/to/wine-11.0-amd64-wow64.tar.xz SHA256
+e2e/test_custom_archive.sh /absolute/path/to/wine-11.0-amd64-wow64.tar.xz SHA256
+e2e/test_starlark.sh
+e2e/test_extension.sh
 ```
 
 The consumer exercises the public module setup. The script tests a named custom
 archive through `http_archive`; supplying an incorrect checksum must fail fetching.
 Keep fixture compilers and test helpers out of production dependency paths.
+The Starlark and extension scripts retain their temporary workspaces for
+inspection. Each accepts an optional ruleset checkout path: the same checks fail
+against baseline `0f17c44` at the Aa/BB action configuration collision and duplicate
+transitive registration name respectively, and pass after the cleanup. The
+Starlark script also checks aliases under `select()`, executable sidecar outputs,
+an external caller's apparent repository mapping and expected analysis errors.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
 `USE_BAZEL_VERSION` when running the common suite. Bazel 9's execution-group check
@@ -69,14 +82,16 @@ default Windows execution configuration invokes a Windows-hosted C++ compiler.
 ## Source build and fixture maintenance
 
 ```sh
-tools/build_runtime.sh --config=remote
-tools/build_fixtures.sh --config=remote
+tests/compile_platforms.sh --config=remote
+tests/update_fixtures.sh --config=remote
 (cd tests/fixture && shasum -a 256 -c SHA256SUMS)
 ```
 
 The supervisor builds from source for each executor and is not checked in. Fixture
-maintenance also needs clang/lld. Keep fixture sources and checked-in test binaries
-in sync.
+maintenance uses Bazel's declared compiler/toolchain for PE executables and the
+companion DLL. Lifecycle and argv verifiers build from source in the actual test
+execution configuration; no verifier binary is checked in. Keep fixture sources
+and checked-in Windows test binaries in sync.
 
 The adapter currently also handles environment overrides, Windows path markers,
 and arbitrary configured argument lists. `hermetic_launcher` v0.0.16 handles
