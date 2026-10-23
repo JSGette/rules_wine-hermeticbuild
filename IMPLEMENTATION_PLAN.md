@@ -1,6 +1,12 @@
 # rules_wine implementation plan
 
-Status: agreed product scope; implementation not started.
+Status: first implementation iteration complete; independent review pending.
+See VALIDATION.md for demonstrated behavior and unverified platform boundaries.
+
+Scope amendment (2026-10-23): user added native macOS execution and explicitly
+rejected Rosetta. Darwin x86_64/ARM64 custom-runtime support is implemented; no
+public ARM64 tar default is invented. The researched experimental native ARM64
+runtime runs its shipped cmd but rejects independent payloads; see VALIDATION.md.
 Date: 2026-10-23.
 
 ## 1. Purpose and design contract
@@ -41,7 +47,7 @@ Use architecture-correct binaries for Wine, its Unix dependencies, and any
 supervisor or launcher. Never substitute x86_64 Wine on ARM64. Native ARM64 Wine
 support does not imply support for x86_64 Windows applications.
 
-Defer x86/32-bit payloads, macOS execution, CPU translation, GUI integration,
+Defer x86/32-bit payloads, CPU translation, GUI integration,
 prepared prefixes, persistent Wine sessions, and an owned wine-prebuilt project.
 Research stronger isolation later; prefix isolation is not a security sandbox.
 

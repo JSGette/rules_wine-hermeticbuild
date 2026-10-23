@@ -1,0 +1,27 @@
+load("@rules_wine//wine:windows_run.bzl", "windows_run")
+load("@rules_wine//wine:windows_test.bzl", "windows_test")
+
+windows_run(
+    name = "generate",
+    outs = ["external.json"],
+    arch = "x86_64",
+    arguments = [
+        "--output",
+        "{windows_path:$@}",
+        "external-consumer",
+    ],
+    binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
+)
+
+windows_test(
+    name = "consumer_test",
+    arch = "x86_64",
+    arguments = [
+        "--contract",
+        "with spaces",
+        "",
+        "café",
+        "--isolated",
+    ],
+    binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
+)

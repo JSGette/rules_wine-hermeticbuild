@@ -1,16 +1,168 @@
-load("//wine:probe.bzl", "runner_probe_x86_64", "runner_probe_aarch64")
-runner_probe_x86_64(name = "probe_x86_64")
-runner_probe_aarch64(name = "probe_aarch64")
-load("//wine:probe.bzl", "runtime_probe")
-runtime_probe(name = "runtime_probe", binary = "fixture/fixture_x86_64.exe")
-load("//wine:windows_run.bzl", "windows_run")
-load("//wine:windows_binary.bzl", "windows_binary")
-windows_run(name = "generate", binary = "fixture/fixture_x86_64.exe", arch = "x86_64", outs = ["generated.json"], arguments = ["--output", "{windows_path:$@}", "space value", "", "Unicode: café", "--isolated"])
-windows_binary(name = "binary", binary = "fixture/fixture_x86_64.exe", arch = "x86_64", arguments = ["space value", "", "café"])
-windows_run(name = "transitioned", binary = "fixture/fixture_x86_64.exe", arch = "x86_64", target_platform = "//platforms:windows_x86_64", outs = ["transitioned.json"], arguments = ["--output", "{windows_path:$@}"])
 load("//tests:adapter_action.bzl", "adapter_action")
-adapter_action(name = "adapter_tool", tool = "binary")
-windows_run(name = "dll", binary = "fixture/fixture_x86_64.exe", arch = "x86_64", data = ["fixture/companion.dll"], outs = ["dll.json"], arguments = ["--dll", "--output", "{windows_path:$@}"])
-windows_run(name = "response", binary = "fixture/fixture_x86_64.exe", arch = "x86_64", data = ["fixture/response.txt"], outs = ["response.json"], arguments = ["--output", "{windows_path:$@}", "@{windows_path:$(location fixture/response.txt)}"])
-exports_files(["fixture/fixture_x86_64.exe", "fixture/fixture_aarch64.exe"], visibility = ["//visibility:public"])
-exports_files(["fixture/minimal_aarch64.exe"], visibility = ["//visibility:public"])
+load("//tests:param_action.bzl", "param_action")
+load("//tests:verify_test.bzl", "runtime_contract_test")
+load("//wine:probe.bzl", "runner_probe_aarch64", "runner_probe_x86_64", "runtime_probe")
+load("//wine:windows_binary.bzl", "windows_binary")
+load("//wine:windows_run.bzl", "windows_run")
+load("//wine:windows_test.bzl", "windows_test")
+
+runner_probe_x86_64(name = "probe_x86_64")
+
+runner_probe_aarch64(name = "probe_aarch64")
+
+runtime_probe(
+    name = "runtime_probe",
+    binary = "fixture/fixture_x86_64.exe",
+)
+
+windows_run(
+    name = "generate",
+    outs = ["generated.json"],
+    arch = "x86_64",
+    arguments = [
+        "--output",
+        "{windows_path:$@}",
+        "space value",
+        "",
+        "Unicode: café",
+        "--isolated",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+)
+
+windows_binary(
+    name = "binary",
+    arch = "x86_64",
+    arguments = [
+        "space value",
+        "",
+        "café",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+)
+
+windows_run(
+    name = "transitioned",
+    outs = ["transitioned.json"],
+    arch = "x86_64",
+    arguments = [
+        "--output",
+        "{windows_path:$@}",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    target_platform = "//platforms:windows_x86_64",
+)
+
+windows_test(
+    name = "smoke_test",
+    arch = "x86_64",
+    arguments = [
+        "--contract",
+        "with spaces",
+        "",
+        "café",
+        "--isolated",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    env = {"FIXTURE_VALUE": "Unicode: café"},
+    shard_count = 2,
+)
+
+adapter_action(
+    name = "adapter_tool",
+    tool = "binary",
+)
+
+windows_run(
+    name = "dll",
+    outs = ["dll.json"],
+    arch = "x86_64",
+    arguments = [
+        "--dll",
+        "--output",
+        "{windows_path:$@}",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/companion.dll"],
+)
+
+windows_run(
+    name = "response",
+    outs = ["response.json"],
+    arch = "x86_64",
+    arguments = [
+        "--output",
+        "{windows_path:$@}",
+        "@{windows_path:$(location fixture/response.txt)}",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/response.txt"],
+)
+
+runtime_contract_test(
+    name = "runtime_contract_test",
+    size = "medium",
+    timeout = "moderate",
+    payload = "fixture/fixture_x86_64.exe",
+    wrong_arch = "fixture/fixture_aarch64.exe",
+)
+
+exports_files(
+    [
+        "fixture/fixture_x86_64.exe",
+        "fixture/fixture_aarch64.exe",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(
+    ["fixture/minimal_aarch64.exe"],
+    visibility = ["//visibility:public"],
+)
+
+windows_test(
+    name = "runfiles_test",
+    arch = "x86_64",
+    arguments = ["@{windows_runfile:_main/tests/fixture/data café.txt}"],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/data café.txt"],
+)
+
+windows_test(
+    name = "timeout_test",
+    timeout = "short",
+    arch = "x86_64",
+    arguments = ["--sleep"],
+    binary = "fixture/fixture_x86_64.exe",
+    tags = ["manual"],
+)
+
+windows_run(
+    name = "missing_dll",
+    outs = ["missing-dll.json"],
+    arch = "x86_64",
+    arguments = [
+        "--dll",
+        "--output",
+        "{windows_path:$@}",
+    ],
+    binary = "fixture/fixture_x86_64.exe",
+    tags = ["manual"],
+)
+
+windows_run(
+    name = "generate_arm64",
+    outs = ["arm64.json"],
+    arch = "aarch64",
+    arguments = [
+        "--output",
+        "{windows_path:$@}",
+    ],
+    binary = "fixture/fixture_aarch64.exe",
+    tags = ["manual"],
+)
+
+param_action(
+    name = "param_file",
+    binary = "fixture/fixture_x86_64.exe",
+)

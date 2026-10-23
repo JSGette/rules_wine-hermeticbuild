@@ -1,0 +1,23 @@
+#!/bin/sh
+# External-consumer acquisition/override verification, validating a caller-supplied checksum.
+set -eu
+archive=${1:?usage: tools/test_custom_archive.sh archive.tar.xz sha256}
+checksum=${2:?archive sha256 required}
+root=$(cd "$(dirname "$0")/.." && pwd)
+scratch=$(mktemp -d /tmp/rules-wine-custom-consumer.XXXXXX)
+cat > "$scratch/MODULE.bazel" <<MODULE
+module(name = "custom_wine_consumer")
+bazel_dep(name = "rules_wine", version = "0.1.0")
+local_path_override(module_name = "rules_wine", path = "$root")
+wine = use_extension("@rules_wine//wine/extension:wine.bzl", "wine")
+wine.prebuilt(name = "custom", arch = "x86_64", urls = ["file://$archive"], sha256 = "$checksum", strip_prefix = "wine-11.0-amd64-wow64", identity = "Local Kron4ek Wine11.0 archive override", requirements = "Ubuntu24.04 console baseline")
+wine.toolchains(name = "custom_toolchains", x86_64 = "custom")
+use_repo(wine, "custom_toolchains")
+register_toolchains("@custom_toolchains//:all")
+MODULE
+cp "$root/e2e/smoke/BUILD.bazel" "$scratch/BUILD.bazel"
+cp "$root/e2e/smoke/.bazelrc" "$scratch/.bazelrc"
+printf '%s\n' "Verification consumer: $scratch"
+cd "$scratch"
+bazel --output_base="$scratch/output" build //:generate --config=remote
+bazel --output_base="$scratch/output" test //:consumer_test --config=remote
