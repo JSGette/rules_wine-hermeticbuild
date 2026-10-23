@@ -1,10 +1,55 @@
 load("//wine/private:payload.bzl", "payload_platform")
+
 package(default_visibility = ["//visibility:public"])
+
 exports_files(glob(["*.bzl"]))
+
 payload_platform(name = "payload_platform")
-config_setting(name = "linux_x86_64", constraint_values = ["@platforms//os:linux", "@platforms//cpu:x86_64"])
-config_setting(name = "linux_aarch64", constraint_values = ["@platforms//os:linux", "@platforms//cpu:aarch64"])
-config_setting(name = "windows_x86_64", constraint_values = ["@platforms//os:windows", "@platforms//cpu:x86_64"])
-config_setting(name = "windows_aarch64", constraint_values = ["@platforms//os:windows", "@platforms//cpu:aarch64"])
-config_setting(name = "osx_x86_64", constraint_values = ["@platforms//os:osx", "@platforms//cpu:x86_64"])
-config_setting(name = "osx_aarch64", constraint_values = ["@platforms//os:osx", "@platforms//cpu:aarch64"])
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "windows_x86_64",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "windows_aarch64",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "osx_x86_64",
+    constraint_values = [
+        "@platforms//os:osx",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "osx_aarch64",
+    constraint_values = [
+        "@platforms//os:osx",
+        "@platforms//cpu:aarch64",
+    ],
+)

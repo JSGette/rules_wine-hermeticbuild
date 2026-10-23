@@ -19,7 +19,7 @@ _DEFAULT = struct(
 )
 
 def _safe(path, field):
-    if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path or '"' in path or "\n" in path:
+    if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path or ":" in path or '"' in path or "\n" in path:
         fail("{} must be a nonempty relative archive path: {}".format(field, repr(path)))
 
 def _archive(name, tag):
@@ -27,6 +27,8 @@ def _archive(name, tag):
         fail("{}: specify exactly one of sha256 or integrity".format(name))
     if not tag.urls:
         fail("{}: urls must not be empty".format(name))
+    if not tag.files or not tag.identity or not tag.requirements:
+        fail("{}: files, identity and requirements must be nonempty".format(name))
     _safe(tag.loader, "loader")
     _safe(tag.server, "server")
     if tag.strip_prefix:
@@ -44,6 +46,9 @@ def _archive(name, tag):
 
 def _impl(ctx):
     direct = []
+    direct_dev = []
+    registration_names = {}
+
     # A module's tags refer only to its own named distributions.
     for index, mod in enumerate(ctx.modules):
         distributions = {"default": (_DEFAULT, "wine_default")}
@@ -52,11 +57,10 @@ def _impl(ctx):
                 fail("duplicate Wine distribution {} in module {}".format(tag.name, mod.name))
             distributions[tag.name] = (tag, "wine_{}_{}".format(index, tag.name))
         created = {}
-        names = {}
         for tag in mod.tags.toolchains:
-            if tag.name in names:
-                fail("duplicate toolchains repository {}".format(tag.name))
-            names[tag.name] = True
+            if tag.name in registration_names:
+                fail("toolchains repository {} already declared by module {}; choose a globally unique registration name".format(tag.name, registration_names[tag.name]))
+            registration_names[tag.name] = mod.name
             repos = {}
             identities = {}
             requirements = {}
@@ -81,10 +85,11 @@ def _impl(ctx):
                 environments[key] = json.encode(dist.env)
             registration_repository(name = tag.name, distributions = repos, identities = identities, requirements = requirements, environments = environments)
             if mod.is_root:
-                direct.append(tag.name)
+                (direct_dev if ctx.is_dev_dependency(tag) else direct).append(tag.name)
+
     # Repository declaration alone does not fetch its archive.
     _archive("wine_default", _DEFAULT)
-    return ctx.extension_metadata(root_module_direct_deps = direct, root_module_direct_dev_deps = [])
+    return ctx.extension_metadata(root_module_direct_deps = direct, root_module_direct_dev_deps = direct_dev)
 
 wine = module_extension(implementation = _impl, tag_classes = {
     "prebuilt": tag_class(attrs = {

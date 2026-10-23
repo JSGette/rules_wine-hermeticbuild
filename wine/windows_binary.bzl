@@ -13,7 +13,7 @@ def adapter_impl(ctx):
     binary = payload(ctx, arch)
     suffix = ".exe" if runner.backend == "native" else ""
     executable = ctx.actions.declare_file(ctx.label.name + suffix)
-    config = ctx.actions.declare_file(executable.basename + ".json")
+    config = ctx.actions.declare_file(ctx.label.name + suffix + ".json")
     ctx.actions.symlink(output = executable, target_file = runner.launcher, is_executable = True)
     config_data = {
         "backend": runner.backend,
