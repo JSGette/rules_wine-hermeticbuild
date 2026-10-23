@@ -1,15 +1,15 @@
 #!/bin/sh
-# Maintenance only: same Go compiler as the runtime; clang/lld for no-CRT DLL.
+# Rebuild independent Windows test programs and the native Linux verifier.
 set -eu
-cd "$(dirname "$0")/../tests/fixture"
-GO=${1:?usage: tools/build_fixtures.sh /absolute/path/to/go1.25.3}
-for cpu in amd64 arm64; do
-  arch=x86_64; [ "$cpu" != arm64 ] || arch=aarch64
-  CGO_ENABLED=0 GOOS=windows GOARCH=$cpu "$GO" build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "fixture_${arch}.exe" .
+cd "$(dirname "$0")/.."
+for arch in x86_64 aarch64; do
+  bazel build //tests:fixture_build --platforms="@llvm//platforms:windows_$arch" "$@"
+  cp bazel-bin/tests/fixture_build.exe "tests/fixture/fixture_$arch.exe"
 done
+bazel build //tests:verify_build --platforms=@llvm//platforms:linux_x86_64_musl "$@"
+cp bazel-bin/tests/verify_build tests/verify/verify_linux_x86_64
 scratch=$(mktemp -d)
 trap 'trash "$scratch"' EXIT
-clang -target x86_64-pc-windows-msvc -c companion.c -o "$scratch/companion.obj"
-lld-link /timestamp:0 /dll /noentry /out:companion.dll "/implib:$scratch/companion.lib" "$scratch/companion.obj"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$GO" -C ../verify build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o verify_linux_x86_64 .
-shasum -a 256 fixture_x86_64.exe fixture_aarch64.exe companion.dll > SHA256SUMS
+clang -target x86_64-pc-windows-msvc -c tests/fixture/companion.c -o "$scratch/companion.obj"
+lld-link /timestamp:0 /dll /noentry /out:tests/fixture/companion.dll "/implib:$scratch/companion.lib" "$scratch/companion.obj"
+(cd tests/fixture && shasum -a 256 fixture_x86_64.exe fixture_aarch64.exe companion.dll > SHA256SUMS)

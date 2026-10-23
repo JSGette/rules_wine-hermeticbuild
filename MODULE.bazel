@@ -1,10 +1,16 @@
 module(
     name = "rules_wine",
     version = "0.1.0",
-    bazel_compatibility = [">=7.7.0"],
+    bazel_compatibility = [">=8.5.0"],
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "llvm", version = "0.7.6")
+bazel_dep(name = "rules_cc", version = "0.2.18")
+
+register_toolchains(
+    "@llvm//toolchain:all",
+)
 
 wine = use_extension("//wine/extension:wine.bzl", "wine", dev_dependency = True)
 wine.toolchains(

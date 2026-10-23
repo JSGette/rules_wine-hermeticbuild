@@ -70,7 +70,10 @@ def _adapter_arguments(ctx):
 def adapter_impl(ctx):
     arch = ctx.attr._arch
     group = ctx.attr._group
-    runner = ctx.toolchains[Label("//wine:adapter_" + arch + "_toolchain_type")].windows if group == "default" else ctx.exec_groups[group].toolchains[windows_actions.toolchain_type(arch)].windows
+    adapter_type = Label("//wine:" + ("adapter_" if group == "default" else "test_adapter_") + arch + "_toolchain_type")
+    runner = ctx.toolchains[adapter_type].windows if group == "default" else ctx.exec_groups[group].toolchains[adapter_type].windows
+    if not runner.launcher:
+        fail("adapter toolchain requires a launcher")
     binary = payload(ctx, arch)
     suffix = ".exe" if runner.backend == "native" else ""
     executable = ctx.actions.declare_file(ctx.label.name + suffix)

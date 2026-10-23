@@ -11,13 +11,15 @@ WineRuntimeInfo = provider(fields = {
 WindowsRunnerInfo = provider(fields = {
     "arch": "Same-CPU Windows payload architecture.",
     "backend": "wine or native.",
-    "launcher": "Executor-native supervisor/adapter File.",
+    "launcher": "Executor-native supervisor/adapter File, or None for direct native actions.",
     "runtime": "WineRuntimeInfo or None.",
 })
 
 def _impl(ctx):
     runtime = None
     if ctx.attr.backend == "wine":
+        if not ctx.file.launcher:
+            fail("wine backend requires launcher")
         if not ctx.file.loader or not ctx.file.server:
             fail("wine backend requires loader and server")
         runtime = WineRuntimeInfo(
@@ -38,7 +40,7 @@ windows_runner_toolchain = rule(
     attrs = {
         "arch": attr.string(mandatory = True, values = ["x86_64", "aarch64"]),
         "backend": attr.string(mandatory = True, values = ["native", "wine"]),
-        "launcher": attr.label(allow_single_file = True, mandatory = True),
+        "launcher": attr.label(allow_single_file = True, cfg = "exec"),
         "loader": attr.label(allow_single_file = True),
         "server": attr.label(allow_single_file = True),
         "files": attr.label(),

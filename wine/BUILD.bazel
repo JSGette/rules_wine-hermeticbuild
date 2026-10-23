@@ -16,3 +16,8 @@ exports_files([
 toolchain_type(name = "adapter_x86_64_toolchain_type")
 
 toolchain_type(name = "adapter_aarch64_toolchain_type")
+
+# Test adapters follow the test execution group, not the target configuration.
+toolchain_type(name = "test_adapter_x86_64_toolchain_type")
+
+toolchain_type(name = "test_adapter_aarch64_toolchain_type")

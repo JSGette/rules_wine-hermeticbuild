@@ -4,7 +4,7 @@ load("//wine:actions.bzl", "windows_actions")
 load("//wine:windows_binary.bzl", "adapter_attrs", "adapter_impl")
 
 def _rule(arch):
-    return rule(implementation = adapter_impl, test = True, attrs = adapter_attrs(arch, "test"), toolchains = [windows_actions.toolchain_type(arch)], exec_groups = {"test": exec_group(toolchains = [windows_actions.toolchain_type(arch)])})
+    return rule(implementation = adapter_impl, test = True, attrs = adapter_attrs(arch, "test"), toolchains = [windows_actions.toolchain_type(arch)], exec_groups = {"test": exec_group(toolchains = [Label("//wine:test_adapter_" + arch + "_toolchain_type")])})
 
 _x86_64_test = _rule("x86_64")
 _aarch64_test = _rule("aarch64")

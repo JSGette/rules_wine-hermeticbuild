@@ -1,11 +1,27 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "linux_x86_64",
-    "linux_aarch64",
-    "windows_x86_64.exe",
-    "windows_aarch64.exe",
-    "darwin_x86_64",
-    "darwin_aarch64",
-    "SHA256SUMS",
-])
+cc_library(
+    name = "json",
+    hdrs = ["json.h"],
+    visibility = ["//tests:__pkg__"],
+)
+
+cc_binary(
+    name = "supervisor",
+    srcs = ["supervisor.cc"],
+    copts = [
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": ["-lshell32"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":json"],
+)

@@ -1,0 +1,596 @@
+// Executor-native adapter for Windows payloads, built from source in the
+// selected execution configuration.
+#include "json.h"
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <map>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+#endif
+
+namespace fs = std::filesystem;
+using namespace std::chrono_literals;
+
+namespace {
+struct Config {
+  std::string backend, arch, loader, server, payload;
+  std::vector<std::string> args;
+  std::map<std::string, std::string> env, runtime_env;
+  bool runfiles = false;
+};
+
+std::string str(const fs::path &path) { return path.u8string(); }
+fs::path path(const std::string &value) { return fs::u8path(value); }
+std::string read(const fs::path &file) {
+  std::ifstream in(file, std::ios::binary);
+  if (!in)
+    throw std::runtime_error("cannot open " + str(file));
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+std::string getenv_string(const char *name) {
+  const char *value = std::getenv(name);
+  return value ? value : "";
+}
+#ifndef _WIN32
+void replace_all(std::string &value, const std::string &find,
+                 const std::string &replacement) {
+  if (find.empty())
+    return;
+  for (size_t at = 0; (at = value.find(find, at)) != std::string::npos;
+       at += replacement.size())
+    value.replace(at, find.size(), replacement);
+}
+#endif
+std::string absolute_path(const fs::path &value) {
+  return str(fs::absolute(value));
+}
+
+Config configuration(const std::string &data) {
+  wine::Json root = wine::JsonParser(data).parse();
+  if (root.kind != wine::Json::object)
+    throw std::runtime_error("expected JSON configuration object");
+  Config c;
+  c.backend = root.at("backend").as_string();
+  c.arch = root.at("arch").as_string();
+  c.loader = root.at("loader").as_string();
+  c.server = root.at("server").as_string();
+  c.payload = root.at("payload").as_string();
+  c.runfiles = root.at("runfiles").as_bool();
+  const auto &args = root.at("args");
+  if (args.kind != wine::Json::null_value && args.kind != wine::Json::array)
+    throw std::runtime_error("expected JSON arguments array");
+  for (const auto &value : args.elements)
+    c.args.push_back(value.as_string());
+  auto strings = [](const wine::Json &value) {
+    std::map<std::string, std::string> result;
+    if (value.kind != wine::Json::null_value &&
+        value.kind != wine::Json::object)
+      throw std::runtime_error("expected JSON environment object");
+    for (const auto &[key, item] : value.fields)
+      result[key] = item.as_string();
+    return result;
+  };
+  c.env = strings(root.at("env"));
+  c.runtime_env = strings(root.at("runtime_env"));
+  return c;
+}
+
+std::string unescape(const std::string &value) {
+  std::string result;
+  for (size_t i = 0; i < value.size(); ++i) {
+    if (value[i] != '\\' || i + 1 == value.size()) {
+      result += value[i];
+      continue;
+    }
+    switch (value[++i]) {
+    case 's':
+      result += ' ';
+      break;
+    case 'n':
+      result += '\n';
+      break;
+    case 'b':
+      result += '\\';
+      break;
+    default:
+      result += '\\';
+      result += value[i];
+      break;
+    }
+  }
+  return result;
+}
+std::string runfile(const std::string &logical, const std::string &self) {
+  if (path(logical).is_absolute())
+    return logical;
+  for (const auto &dir : {getenv_string("RUNFILES_DIR"),
+                          getenv_string("TEST_SRCDIR"), self + ".runfiles"}) {
+    if (dir.empty())
+      continue;
+    fs::path candidate = path(dir) / path(logical);
+    if (fs::exists(candidate))
+      return absolute_path(candidate);
+  }
+  std::string manifest = getenv_string("RUNFILES_MANIFEST_FILE");
+  if (manifest.empty())
+    manifest = self + ".runfiles_manifest";
+  std::ifstream in(path(manifest));
+  std::string line, best_key, best_value;
+  while (std::getline(in, line)) {
+    bool escaped = !line.empty() && line[0] == ' ';
+    if (escaped)
+      line.erase(0, 1);
+    size_t split = line.find(' ');
+    std::string key = line.substr(0, split);
+    std::string value =
+        split == std::string::npos ? key : line.substr(split + 1);
+    if (escaped) {
+      key = unescape(key);
+      value = unescape(value);
+    }
+    if (key == logical)
+      return absolute_path(path(value));
+    if (!key.empty() && logical.size() > key.size() &&
+        logical.compare(0, key.size(), key) == 0 &&
+        logical[key.size()] == '/' && key.size() > best_key.size()) {
+      best_key = key;
+      best_value = value;
+    }
+  }
+  if (!best_key.empty())
+    return absolute_path(path(best_value) /
+                         path(logical.substr(best_key.size() + 1)));
+  throw std::runtime_error("runfile \"" + logical +
+                           "\" not found (RUNFILES_DIR/manifest)");
+}
+
+std::string windows_path(const std::string &value) {
+#ifdef _WIN32
+  return value;
+#else
+  std::string result = "Z:" + absolute_path(path(value));
+  std::replace(result.begin(), result.end(), '/', '\\');
+  return result;
+#endif
+}
+std::string convert(std::string value, const std::string &self) {
+  for (const auto &marker : {"{windows_path:", "{windows_runfile:"}) {
+    size_t start;
+    while ((start = value.find(marker)) != std::string::npos) {
+      size_t end = value.find('}', start);
+      if (end == std::string::npos)
+        throw std::runtime_error("unterminated Windows path interpolation");
+      std::string item = value.substr(start + std::strlen(marker),
+                                      end - start - std::strlen(marker));
+      if (std::strcmp(marker, "{windows_runfile:") == 0)
+        item = runfile(item, self);
+      value.replace(start, end + 1 - start, windows_path(item));
+    }
+  }
+  return value;
+}
+
+unsigned little16(const unsigned char *p) {
+  return p[0] | (static_cast<unsigned>(p[1]) << 8);
+}
+unsigned little32(const unsigned char *p) {
+  return little16(p) | (little16(p + 2) << 16);
+}
+#ifdef __APPLE__
+unsigned big32(const unsigned char *p) {
+  return (static_cast<unsigned>(p[0]) << 24) |
+         (static_cast<unsigned>(p[1]) << 16) |
+         (static_cast<unsigned>(p[2]) << 8) | p[3];
+}
+#endif
+void validate_pe(const std::string &name, const std::string &arch) {
+  std::ifstream file(path(name), std::ios::binary);
+  std::array<unsigned char, 64> header{};
+  if (!file.read(reinterpret_cast<char *>(header.data()), header.size()) ||
+      header[0] != 'M' || header[1] != 'Z')
+    throw std::runtime_error("payload is not a Windows PE executable");
+  file.seekg(little32(header.data() + 60));
+  std::array<unsigned char, 6> pe{};
+  if (!file.read(reinterpret_cast<char *>(pe.data()), pe.size()) ||
+      pe[0] != 'P' || pe[1] != 'E' || pe[2] != 0 || pe[3] != 0 ||
+      little16(pe.data() + 4) != (arch == "aarch64" ? 0xaa64 : 0x8664))
+    throw std::runtime_error("payload PE machine does not match " + arch);
+}
+#ifndef _WIN32
+void validate_native(const std::string &name, const std::string &arch) {
+  std::ifstream file(path(name), std::ios::binary);
+  std::array<unsigned char, 64> header{};
+  if (!file.read(reinterpret_cast<char *>(header.data()), header.size()))
+    throw std::runtime_error("native Wine executable " + name +
+                             ": unreadable header");
+#ifdef __linux__
+  unsigned want = arch == "aarch64" ? 183 : 62;
+  if (header[0] != 0x7f || header[1] != 'E' || header[2] != 'L' ||
+      header[3] != 'F' || header[4] != 2 ||
+      little16(header.data() + 18) != want)
+    throw std::runtime_error("Wine executable CPU does not match " + arch +
+                             ": " + name);
+#else
+  unsigned want = arch == "aarch64" ? 0x0100000c : 0x01000007;
+  unsigned magic = little32(header.data());
+  if (magic == 0xfeedfacf && little32(header.data() + 4) == want)
+    return;
+  if (big32(header.data()) == 0xcafebabe ||
+      big32(header.data()) == 0xcafebabf) {
+    bool fat64 = big32(header.data()) == 0xcafebabf;
+    unsigned count = big32(header.data() + 4);
+    for (unsigned i = 0; i < count && i < 64; ++i) {
+      std::array<unsigned char, 32> entry{};
+      file.seekg(8 + i * (fat64 ? 32 : 20));
+      if (!file.read(reinterpret_cast<char *>(entry.data()), fat64 ? 32 : 20))
+        break;
+      if (big32(entry.data()) == want)
+        return;
+    }
+  }
+  throw std::runtime_error("Wine executable lacks native " + arch +
+                           " Mach-O slice (no Rosetta fallback): " + name);
+#endif
+}
+#endif
+
+volatile std::sig_atomic_t pending_signal = 0;
+void signal_handler(int signum) { pending_signal = signum; }
+
+#ifdef _WIN32
+std::wstring wide(const std::string &value) {
+  int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                 static_cast<int>(value.size()), nullptr, 0);
+  if (size <= 0 && !value.empty())
+    throw std::runtime_error("invalid UTF-8 string");
+  std::wstring result(size, L'\0');
+  if (size)
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                        static_cast<int>(value.size()), result.data(), size);
+  return result;
+}
+std::string utf8(const std::wstring &value) {
+  int size = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                                 static_cast<int>(value.size()), nullptr, 0,
+                                 nullptr, nullptr);
+  std::string result(size, '\0');
+  if (size)
+    WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                        static_cast<int>(value.size()), result.data(), size,
+                        nullptr, nullptr);
+  return result;
+}
+std::wstring quote(const std::wstring &arg) {
+  std::wstring result = L"\"";
+  unsigned slashes = 0;
+  for (wchar_t c : arg) {
+    if (c == L'\\') {
+      ++slashes;
+      continue;
+    }
+    if (c == L'"')
+      result.append(slashes * 2 + 1, L'\\');
+    else
+      result.append(slashes, L'\\');
+    slashes = 0;
+    result += c;
+  }
+  result.append(slashes * 2, L'\\');
+  return result + L'"';
+}
+int execute(const std::string &program, const std::vector<std::string> &args,
+            const std::map<std::string, std::string> &env,
+            std::chrono::seconds timeout, bool cancellable) {
+  for (const auto &[key, value] : env)
+    SetEnvironmentVariableW(wide(key).c_str(), wide(value).c_str());
+  std::wstring command = quote(wide(program));
+  for (const auto &arg : args)
+    command += L" " + quote(wide(arg));
+  std::vector<wchar_t> mutable_command(command.begin(), command.end());
+  mutable_command.push_back(0);
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  HANDLE job = CreateJobObjectW(nullptr, nullptr);
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+  limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (!job ||
+      !SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits,
+                               sizeof(limits)) ||
+      !CreateProcessW(wide(program).c_str(), mutable_command.data(), nullptr,
+                      nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr,
+                      &startup, &process)) {
+    if (job)
+      CloseHandle(job);
+    std::cerr << "rules_wine: process start failed: " << GetLastError() << '\n';
+    return 125;
+  }
+  if (!AssignProcessToJobObject(job, process.hProcess)) {
+    TerminateProcess(process.hProcess, 125);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    CloseHandle(job);
+    return 125;
+  }
+  ResumeThread(process.hThread);
+  auto deadline = std::chrono::steady_clock::now() + timeout;
+  int result = 0;
+  while (WaitForSingleObject(process.hProcess, 20) == WAIT_TIMEOUT) {
+    if (cancellable && pending_signal) {
+      result = 128 + pending_signal;
+      break;
+    }
+    if (timeout.count() && std::chrono::steady_clock::now() >= deadline) {
+      result = 124;
+      break;
+    }
+  }
+  if (!result) {
+    DWORD code;
+    GetExitCodeProcess(process.hProcess, &code);
+    result = static_cast<int>(code);
+  }
+  CloseHandle(job);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  return result;
+}
+#else
+int execute(const std::string &program, const std::vector<std::string> &args,
+            const std::map<std::string, std::string> &env,
+            std::chrono::seconds timeout, bool cancellable) {
+  pid_t child = fork();
+  if (child == 0) {
+    setpgid(0, 0);
+    for (const auto &[key, value] : env)
+      setenv(key.c_str(), value.c_str(), 1);
+    for (int sig : {SIGTERM, SIGINT, SIGHUP})
+      std::signal(sig, SIG_DFL);
+    std::vector<char *> argv{const_cast<char *>(program.c_str())};
+    for (const auto &arg : args)
+      argv.push_back(const_cast<char *>(arg.c_str()));
+    argv.push_back(nullptr);
+    execvp(program.c_str(), argv.data());
+    std::fprintf(stderr, "rules_wine: cannot start %s: %s\n", program.c_str(),
+                 std::strerror(errno));
+    _exit(125);
+  }
+  if (child < 0) {
+    std::perror("rules_wine: fork");
+    return 125;
+  }
+  setpgid(child, child);
+  auto deadline = std::chrono::steady_clock::now() + timeout;
+  int status = 0;
+  for (;;) {
+    pid_t waited = waitpid(child, &status, WNOHANG);
+    if (waited == child)
+      break;
+    if (waited < 0 && errno != EINTR) {
+      std::perror("rules_wine: waitpid");
+      return 125;
+    }
+    if (cancellable && pending_signal) {
+      int signum = pending_signal;
+      kill(-child, SIGKILL);
+      waitpid(child, &status, 0);
+      return 128 + signum;
+    }
+    if (timeout.count() && std::chrono::steady_clock::now() >= deadline) {
+      std::cerr << "rules_wine: initialization/cleanup timed out\n";
+      kill(-child, SIGKILL);
+      waitpid(child, &status, 0);
+      return 124;
+    }
+    std::this_thread::sleep_for(20ms);
+  }
+  if (WIFSIGNALED(status))
+    return 128 + WTERMSIG(status);
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 125;
+}
+#endif
+
+struct Scope {
+  std::function<void()> finish;
+  ~Scope() {
+    if (finish)
+      finish();
+  }
+};
+
+int invoke(Config c, std::vector<std::string> extra, const std::string &self) {
+  if (c.arch != "x86_64" && c.arch != "aarch64")
+    throw std::runtime_error("unsupported payload architecture " + c.arch);
+#if defined(__x86_64__) || defined(_M_X64)
+  const std::string cpu = "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  const std::string cpu = "aarch64";
+#else
+  const std::string cpu = "unsupported";
+#endif
+  if (cpu != c.arch)
+    throw std::runtime_error("CPU translation is unsupported");
+  auto resolve = [&](const std::string &name, bool canonicalize) {
+    if (name.empty())
+      return name;
+    fs::path result =
+        path(c.runfiles ? runfile(name, self) : absolute_path(path(name)));
+    // Keep the payload's logical runfiles path so adjacent DLL lookup works.
+    if (canonicalize)
+      result = fs::canonical(result);
+    return str(result);
+  };
+  c.payload = resolve(c.payload, false);
+  c.loader = resolve(c.loader, true);
+  c.server = resolve(c.server, true);
+  validate_pe(c.payload, c.arch);
+  c.args.insert(c.args.end(), extra.begin(), extra.end());
+  for (auto &arg : c.args)
+    arg = convert(arg, self);
+  for (auto &[key, value] : c.env)
+    value = convert(value, self);
+  for (int sig : {SIGTERM, SIGINT
+#ifndef _WIN32
+                  ,
+                  SIGHUP
+#endif
+       })
+    std::signal(sig, signal_handler);
+  if (c.backend == "native") {
+#ifndef _WIN32
+    throw std::runtime_error("native backend requires Windows");
+#else
+    return execute(c.payload, c.args, c.env, 0s, true);
+#endif
+  }
+  if (c.backend != "wine")
+    throw std::runtime_error("Wine backend requires Linux or macOS");
+#ifdef _WIN32
+  throw std::runtime_error("Wine backend requires Linux or macOS");
+#else
+  validate_native(c.loader, c.arch);
+  validate_native(c.server, c.arch);
+  std::string scratch_base;
+#ifdef __APPLE__
+  // Keep Wine's Unix socket path below sockaddr_un's short macOS limit.
+  scratch_base = "/tmp";
+#else
+  scratch_base = getenv_string("TMPDIR");
+  if (scratch_base.empty())
+    scratch_base = "/tmp";
+#endif
+  std::string template_path = scratch_base + "/rules-wine-XXXXXX";
+  std::vector<char> temp(template_path.begin(), template_path.end());
+  temp.push_back(0);
+  if (!mkdtemp(temp.data()))
+    throw std::runtime_error("cannot create private Wine directory");
+  const std::string scratch = temp.data();
+  Scope remove{[&] {
+    std::error_code error;
+    fs::remove_all(path(scratch), error);
+    if (error)
+      std::cerr << "rules_wine: cleanup: " << error.message() << '\n';
+  }};
+  const std::string prefix = scratch + "/prefix";
+  const std::map<std::string, std::string> fixed = {
+      {"WINEPREFIX", prefix},
+      {"WINEARCH", "win64"},
+      {"WINELOADER", c.loader},
+      {"WINESERVER", c.server},
+      {"WINEDLLOVERRIDES", "mscoree,mshtml,winemenubuilder.exe="},
+      {"WINEDEBUG", "-all"},
+      {"HOME", scratch},
+      {"XDG_CACHE_HOME", scratch},
+      {"TMPDIR", scratch},
+      {"TMP", scratch},
+      {"TEMP", scratch},
+      {"LC_ALL", "C.UTF-8"},
+      {"TZ", "UTC"},
+      {"DISPLAY", ""},
+      {"WAYLAND_DISPLAY", ""},
+      {"PATH", str(path(c.loader).parent_path())},
+  };
+  for (const auto &[key, value] : fixed)
+    c.env[key] = value;
+  for (auto &[key, value] : c.runtime_env) {
+    for (const auto &reserved :
+         {"WINEPREFIX", "WINEARCH", "WINELOADER", "WINESERVER",
+          "WINEDLLOVERRIDES", "HOME", "TMPDIR", "PATH"})
+      if (key == reserved)
+        throw std::runtime_error("reserved runtime environment " + key);
+    replace_all(value, "{loader_dir}", str(path(c.loader).parent_path()));
+    replace_all(value, "{server_dir}", str(path(c.server).parent_path()));
+    c.env[key] = value;
+  }
+  for (const char *key :
+       {"TEST_TMPDIR", "TEST_UNDECLARED_OUTPUTS_DIR",
+        "TEST_UNDECLARED_OUTPUTS_MANIFEST",
+        "TEST_UNDECLARED_OUTPUTS_ANNOTATIONS_DIR", "XML_OUTPUT_FILE",
+        "TEST_SHARD_STATUS_FILE", "TEST_SRCDIR", "RUNFILES_DIR",
+        "RUNFILES_MANIFEST_FILE"}) {
+    std::string value = c.env.count(key) ? c.env[key] : getenv_string(key);
+    if (!value.empty())
+      c.env[key] = windows_path(value);
+  }
+#ifdef __linux__
+  prctl(PR_SET_CHILD_SUBREAPER, 1);
+#endif
+  Scope stop{[&] {
+    if (int status = execute(c.server, {"-k"}, c.env, 5s, false); status)
+      std::cerr << "rules_wine: wineserver cleanup status " << status << '\n';
+    execute(c.server, {"-w"}, c.env, 5s, false);
+#ifdef __linux__
+    int status;
+    while (waitpid(-1, &status, WNOHANG) > 0) {
+    }
+#endif
+  }};
+  int status = execute(c.loader, {"wineboot.exe", "--init"}, c.env, 60s, true);
+  if (status)
+    return status;
+  std::vector<std::string> args{windows_path(c.payload)};
+  args.insert(args.end(), c.args.begin(), c.args.end());
+  return execute(c.loader, args, c.env, 0s, true);
+#endif
+}
+} // namespace
+
+int main(int argc, char **argv) {
+  try {
+#ifdef _WIN32
+    int wide_argc = 0;
+    wchar_t **wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (!wide_argv)
+      throw std::runtime_error("cannot parse Windows command line");
+    std::vector<std::string> arguments;
+    for (int i = 0; i < wide_argc; ++i)
+      arguments.push_back(utf8(wide_argv[i]));
+    LocalFree(wide_argv);
+    std::vector<char *> narrow;
+    for (auto &argument : arguments)
+      narrow.push_back(argument.data());
+    argc = static_cast<int>(narrow.size());
+    argv = narrow.data();
+#endif
+    std::string self = absolute_path(path(argv[0]));
+    std::string config = self + ".json";
+    int first = 1;
+    // An adjacent sidecar owns the whole argv, including leading --config/--.
+    if (!fs::exists(path(config)) && argc >= 3 &&
+        std::string(argv[1]) == "--config") {
+      config = argv[2];
+      first = argc > 3 && std::string(argv[3]) == "--" ? 4 : 3;
+    }
+    std::vector<std::string> extra;
+    for (int i = first; i < argc; ++i)
+      extra.emplace_back(argv[i]);
+    return invoke(configuration(read(path(config))), extra, self);
+  } catch (const std::exception &error) {
+    std::cerr << "rules_wine: " << error.what() << '\n';
+    return 125;
+  }
+}
