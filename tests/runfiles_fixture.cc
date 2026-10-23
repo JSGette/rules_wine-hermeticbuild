@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
       throw std::runtime_error(error);
     }
     auto license =
-        files->Rlocation("platforms/LICENSE", BAZEL_CURRENT_REPOSITORY);
+        files->Rlocation("rules_cc/LICENSE", BAZEL_CURRENT_REPOSITORY);
     if (read(license).find("Apache License") == std::string::npos ||
         read(files->Rlocation("root-alias.txt")) != "alias-only data\n") {
       throw std::runtime_error("repository mapping or alias runfiles contract");

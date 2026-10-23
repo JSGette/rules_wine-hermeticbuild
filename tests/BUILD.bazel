@@ -79,7 +79,7 @@ cc_binary(
         "-Wextra",
         "-Werror",
     ],
-    data = ["@platforms//:LICENSE"],
+    data = ["@rules_cc//:LICENSE"],
     deps = ["@rules_cc//cc/runfiles"],
 )
 
