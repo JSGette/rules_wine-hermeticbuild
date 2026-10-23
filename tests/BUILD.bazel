@@ -1,5 +1,6 @@
 load("//tests:adapter_action.bzl", "adapter_action")
 load("//tests:param_action.bzl", "param_action")
+load("//tests:tools_action.bzl", "tools_action")
 load("//tests:verify_test.bzl", "runtime_contract_test")
 load("//wine:probe.bzl", "runner_probe_aarch64", "runner_probe_x86_64", "runtime_probe")
 load("//wine:windows_binary.bzl", "windows_binary")
@@ -173,4 +174,32 @@ runtime_contract_test(
     adapter_cli_only = True,
     payload = "fixture/fixture_x86_64.exe",
     wrong_arch = "fixture/fixture_aarch64.exe",
+)
+
+windows_binary(
+    name = "additional_tool",
+    arch = "x86_64",
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/data café.txt"],
+)
+
+tools_action(
+    name = "additional_tools",
+    additional_tools = True,
+    binary = "fixture/fixture_x86_64.exe",
+    extra = "additional_tool",
+)
+
+tools_action(
+    name = "default_group",
+    binary = "fixture/fixture_x86_64.exe",
+    default_group = True,
+)
+
+tools_action(
+    name = "default_group_tools",
+    additional_tools = True,
+    binary = "fixture/fixture_x86_64.exe",
+    default_group = True,
+    extra = "additional_tool",
 )

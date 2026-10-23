@@ -222,3 +222,12 @@ segment boundaries. Command: Go1.25.3 `go -C wine/runtime test -run
 TestRunfileManifestDirectoryMappings`. The resolver scans for the longest mapped
 directory and appends the unmatched child path only after exact lookup completes.
 Support executables and SHA256SUMS rebuilt from the same source.
+
+Review regressions: helper default execution group and additional tools. Separate
+baseline consumers failed analysis with `non-existent exec group 'default'` and
+`multiple values for argument 'tools'`. The helper now translates its public
+`default` sentinel to Bazel's None action argument, and explicitly accepts/merges
+additional tools with the payload File/FilesToRunProvider. Three real Linux
+consumers (default, named+tools, default+tools) passed; tool cases read a Unicode
+space-containing file available only through the auxiliary tool's runfiles tree,
+and emitted its expected contents in the declared JSON output.
