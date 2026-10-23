@@ -62,7 +62,7 @@ windows_run(
     arch = "x86_64",
     srcs = ["schema.txt"],
     outs = ["generated.txt"],
-    arguments = ["--output", "{windows_path:$@}", "{windows_path:$(location schema.txt)}"],
+    arguments = ["--output", "$@", "$(location schema.txt)"],
 )
 windows_binary(
     name = "generator",
@@ -103,13 +103,27 @@ it beside the executable. Arrange source-generated executable/DLL outputs in the
 same directory. This iteration does not automatically forward arbitrary wrapped
 test providers or instrument coverage; wrap a test executable explicitly.
 
-Path conversion is explicit: `{windows_path:execroot/relative/path}` converts only
-that path to Wine's `Z:` namespace, leaving options and opaque strings intact.
-Embedded options work, e.g. `/out:{windows_path:$@}`. For adapter runfiles use
-`{windows_runfile:_main/package/file}` (or the external canonical runfiles key).
-Adapters resolve `$(location ...)` and `$(locations ...)` in declared payload/data
-arguments to canonical runfiles keys, including existing nested
-`{windows_path:$(location ...)}` syntax. Action locations remain execroot paths.
+High-level arguments use typed file expressions: `$(location label)` names one
+declared payload/source/data file; `$@` names a sole action output. These convert
+to Wine's `Z:` namespace, leaving options and opaque strings intact. Embedded
+options work, e.g. `/out:$@`. `$(locations label)`, `$(SRCS)` and `$(OUTS)` expand
+to separate argv elements when they occupy a complete argument; embedded plural
+expressions must identify one file. Source/output variables apply to actions.
+`$(runfile logical/key)` names declared runfiles, including workspace symlinks,
+root symlinks and empty entries. Actions transport the complete runfiles manifest;
+adapters preserve the complete Bazel runfiles object. `$$` escapes a literal dollar.
+Expansion happens once, so dollars, spaces and braces inside filenames remain
+literal. Arbitrary Make variables and nested `{windows_path:...}` argument
+wrappers are unsupported. Adapter locations use canonical runfiles keys; action
+locations use execroot paths.
+Locations of executable targets name their executable; other targets expose
+their files in sorted path order. Aliases and configurable arguments are
+supported on Bazel 8.5 and 9.3. Bazel hides original alias labels from Starlark;
+a small compatibility bridge compares complete native expansions against typed
+File sets, with no shell parsing. If an alias ambiguously identifies both an
+executable and a different output set, reference the actual canonical target.
+Action manifests retain the wrapped executable's `_repo_mapping` file so standard
+Bazel runfiles libraries can resolve apparent repository names.
 Response-file contents and encoding belong to the payload; UTF-8 fixture content
 and Args parameter-file transport are exercised. Do not rewrite every slash.
 
@@ -159,6 +173,19 @@ a list or depset; `runtime_files`, outputs, environment, mnemonic and additional
 markers inside a response file are not interpreted by the supervisor; use
 payload-native relative paths or format response content in the consumer rule.
 
+The low-level `windows_actions.path` helper encodes a path as a JSON string inside
+`{windows_path:...}` for Wine and returns the ordinary path for native Windows.
+This encoding handles braces, quotes and backslashes without delimiter escaping.
+Use the helper instead of constructing markers by concatenating strings.
+Each wrapped action must have at least one output; its first output identifies
+the configuration under the rule's reserved `<name>.wine/` output directory.
+
+The two CPU-specific rule declarations are intentional: Bazel 8.5 requires static
+toolchain types and execution-group constraints. They select a same-CPU executor
+while allowing final outputs to target an unrelated platform and keeping tests
+on their actual test execution group. A configuration setting/transition solely
+to merge these declarations would add a public configuration contract.
+
 ## Custom distributions and toolchains
 
 ```starlark
@@ -185,8 +212,12 @@ must stay relative. Loader/server must be native ELF or Mach-O executables;
 the supervisor checks their CPU headers before launch (no Rosetta fallback).
 Shell-script Wine launchers are not accepted. Keep the complete installation layout. Named distributions
 are module-local; generated distribution identities are module-qualified.
-Registration repository names must be globally unique across users of the same
-extension. Select `x86_64`, `aarch64`, `macos_x86_64`, and `macos_aarch64`
+Root toolchain declarations override dependencies with the same registration
+name. Equivalent dependency declarations share a repository; conflicting
+declarations require a root choice or separate names. `wine_default` and the
+`wine_dist_` prefix are reserved for internal distributions. Archive repository
+names derive from module identity, independent of module traversal order.
+Select `x86_64`, `aarch64`, `macos_x86_64`, and `macos_aarch64`
 independently; absent Linux/macOS entries are omitted, never substituted.
 
 Distribution `env` may supply loader library paths using `{loader_dir}` and
@@ -207,7 +238,9 @@ against `runner_<arch>_toolchain_type`, `adapter_<arch>_toolchain_type`, or
 constraints and no final-output constraints. Binary adapters additionally have
 matching target OS/CPU constraints; test adapters follow the test execution group
 and have no target constraints. `WindowsRunnerInfo` and `WineRuntimeInfo` expose
-the advanced contract.
+the advanced contract. `launcher` is an executable dependency in execution
+configuration; its FilesToRunProvider and full runfiles are preserved. Runtime
+loader/server/files dependencies also use execution configuration.
 
 ## Isolation, runtime maintenance and limits
 
@@ -230,8 +263,8 @@ has not been runtime-verified. See [testing and maintenance](tests/README.md) fo
 the verification commands and platform gaps.
 
 The supervisor is compiled from source for the selected execution platform. No
-supervisor binary is checked in. `tools/build_runtime.sh --config=remote` checks
-the six cross-compilation targets; `tools/build_fixtures.sh --config=remote`
+supervisor binary is checked in. `tests/compile_platforms.sh --config=remote` checks
+the six cross-compilation targets; `tests/update_fixtures.sh --config=remote`
 rebuilds development-only fixtures, which are not consumer dependencies.
 
 macOS ARM64 requires a compatible native Wine archive. The experimental build

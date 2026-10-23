@@ -44,6 +44,11 @@ struct Json {
 class JsonParser {
 public:
   explicit JsonParser(const std::string &input) : input_(input) {}
+  Json parse_prefix(size_t &end) {
+    Json result = value();
+    end = position_;
+    return result;
+  }
   Json parse() {
     Json result = value();
     space();

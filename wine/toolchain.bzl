@@ -1,24 +1,25 @@
 """Windows runner providers and user-authored toolchain implementation."""
 
-WineRuntimeInfo = provider(fields = {
-    "loader": "Wine ELF loader File; installation layout preserved.",
+WineRuntimeInfo = provider("Immutable Wine distribution built for the selected executor.", fields = {
+    "loader": "Native Wine ELF/Mach-O loader File; installation layout preserved.",
     "server": "Matching wineserver File.",
     "files": "Complete immutable distribution depset.",
     "identity": "Distribution/version provenance.",
     "requirements": "Host library requirements, not inferred hermeticity.",
     "env": "Distribution loader environment; {loader_dir} and {server_dir} placeholders.",
 })
-WindowsRunnerInfo = provider(fields = {
+WindowsRunnerInfo = provider("Execution contract for same-CPU Windows payloads.", fields = {
     "arch": "Same-CPU Windows payload architecture.",
     "backend": "wine or native.",
-    "launcher": "Executor-native supervisor/adapter File, or None for direct native actions.",
+    "launcher": "Executor-native supervisor/adapter FilesToRunProvider, or None for direct native actions.",
     "runtime": "WineRuntimeInfo or None.",
+    "runfiles": "Complete executor-native launcher runfiles.",
 })
 
 def _impl(ctx):
     runtime = None
     if ctx.attr.backend == "wine":
-        if not ctx.file.launcher:
+        if not ctx.executable.launcher:
             fail("wine backend requires launcher")
         if not ctx.file.loader or not ctx.file.server:
             fail("wine backend requires loader and server")
@@ -32,7 +33,14 @@ def _impl(ctx):
         )
     elif ctx.file.loader or ctx.file.server or ctx.attr.files:
         fail("native backend must not depend on Wine")
-    info = WindowsRunnerInfo(arch = ctx.attr.arch, backend = ctx.attr.backend, launcher = ctx.file.launcher, runtime = runtime)
+    launcher = ctx.attr.launcher[DefaultInfo] if ctx.attr.launcher else None
+    info = WindowsRunnerInfo(
+        arch = ctx.attr.arch,
+        backend = ctx.attr.backend,
+        launcher = launcher.files_to_run if launcher else None,
+        runtime = runtime,
+        runfiles = launcher.default_runfiles.merge_all([launcher.data_runfiles]) if launcher else ctx.runfiles(),
+    )
     return [info, platform_common.ToolchainInfo(windows = info)] + ([runtime] if runtime else [])
 
 windows_runner_toolchain = rule(
@@ -40,10 +48,10 @@ windows_runner_toolchain = rule(
     attrs = {
         "arch": attr.string(mandatory = True, values = ["x86_64", "aarch64"]),
         "backend": attr.string(mandatory = True, values = ["native", "wine"]),
-        "launcher": attr.label(allow_single_file = True, cfg = "exec"),
-        "loader": attr.label(allow_single_file = True),
-        "server": attr.label(allow_single_file = True),
-        "files": attr.label(),
+        "launcher": attr.label(executable = True, allow_single_file = True, cfg = "exec"),
+        "loader": attr.label(allow_single_file = True, cfg = "exec"),
+        "server": attr.label(allow_single_file = True, cfg = "exec"),
+        "files": attr.label(cfg = "exec"),
         "identity": attr.string(),
         "requirements": attr.string(),
         "env": attr.string_dict(),

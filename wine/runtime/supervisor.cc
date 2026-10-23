@@ -136,23 +136,26 @@ std::string unescape(const std::string &value) {
   }
   return result;
 }
-std::string runfile(const std::string &logical, const std::string &self) {
+std::string runfile(const std::string &logical, const std::string &self,
+                    std::string manifest = {}) {
   if (path(logical).is_absolute()) {
     return logical;
   }
-  for (const auto &dir : {getenv_string("RUNFILES_DIR"),
-                          getenv_string("TEST_SRCDIR"), self + ".runfiles"}) {
-    if (dir.empty()) {
-      continue;
-    }
-    fs::path candidate = path(dir) / path(logical);
-    if (fs::exists(candidate)) {
-      return absolute_path(candidate);
-    }
-  }
-  std::string manifest = getenv_string("RUNFILES_MANIFEST_FILE");
   if (manifest.empty()) {
-    manifest = self + ".runfiles_manifest";
+    for (const auto &dir : {getenv_string("RUNFILES_DIR"),
+                            getenv_string("TEST_SRCDIR"), self + ".runfiles"}) {
+      if (dir.empty()) {
+        continue;
+      }
+      fs::path candidate = path(dir) / path(logical);
+      if (fs::exists(candidate)) {
+        return absolute_path(candidate);
+      }
+    }
+    manifest = getenv_string("RUNFILES_MANIFEST_FILE");
+    if (manifest.empty()) {
+      manifest = self + ".runfiles_manifest";
+    }
   }
   std::ifstream in(path(manifest));
   std::string line, best_key, best_value;
@@ -196,21 +199,36 @@ std::string windows_path(const std::string &value) {
   return result;
 #endif
 }
-std::string convert(std::string value, const std::string &self) {
-  for (const auto &marker : {"{windows_path:", "{windows_runfile:"}) {
-    size_t start;
-    while ((start = value.find(marker)) != std::string::npos) {
-      size_t end = value.find('}', start);
-      if (end == std::string::npos) {
-        throw std::runtime_error("unterminated Windows path interpolation");
-      }
-      std::string item = value.substr(start + std::strlen(marker),
-                                      end - start - std::strlen(marker));
-      if (std::strcmp(marker, "{windows_runfile:") == 0) {
-        item = runfile(item, self);
-      }
-      value.replace(start, end + 1 - start, windows_path(item));
+std::string convert(std::string value, const std::string &self,
+                    const std::string &manifest = {}) {
+  size_t start = 0;
+  while (true) {
+    size_t direct = value.find("{windows_path:", start);
+    size_t runfile_at = value.find("{windows_runfile:", start);
+    start = std::min(direct, runfile_at);
+    if (start == std::string::npos) {
+      break;
     }
+    const char *marker =
+        start == direct ? "{windows_path:" : "{windows_runfile:";
+    size_t consumed = 0;
+    std::string encoded = value.substr(start + std::strlen(marker));
+    wine::Json decoded = wine::JsonParser(encoded).parse_prefix(consumed);
+    if (decoded.kind != wine::Json::string) {
+      throw std::runtime_error(
+          "expected JSON string in Windows path interpolation");
+    }
+    std::string item = decoded.as_string();
+    size_t end = start + std::strlen(marker) + consumed;
+    if (end == value.size() || value[end] != '}') {
+      throw std::runtime_error("unterminated Windows path interpolation");
+    }
+    if (std::strcmp(marker, "{windows_runfile:") == 0) {
+      item = runfile(item, self, manifest);
+    }
+    std::string converted = windows_path(item);
+    value.replace(start, end + 1 - start, converted);
+    start += converted.size();
   }
   return value;
 }
@@ -496,11 +514,14 @@ int invoke(Config c, std::vector<std::string> extra, const std::string &self) {
   c.server = resolve(c.server, true);
   validate_pe(c.payload, c.arch);
   c.args.insert(c.args.end(), extra.begin(), extra.end());
+  auto manifest_entry = c.env.find("RUNFILES_MANIFEST_FILE");
+  const std::string payload_manifest =
+      manifest_entry == c.env.end() ? "" : manifest_entry->second;
   for (auto &arg : c.args) {
-    arg = convert(arg, self);
+    arg = convert(arg, self, payload_manifest);
   }
   for (auto &[key, value] : c.env) {
-    value = convert(value, self);
+    value = convert(value, self, payload_manifest);
   }
   std::signal(SIGTERM, signal_handler);
   std::signal(SIGINT, signal_handler);

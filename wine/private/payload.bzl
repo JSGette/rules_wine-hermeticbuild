@@ -1,9 +1,9 @@
 """Optional compilation transition; never transitions the final output platform."""
 
-PayloadPlatformInfo = provider(fields = ["windows", "arch"])
+PayloadPlatformInfo = provider("Platform facts in the payload's optional compilation configuration.", fields = ["windows", "arch"])
 
 def _transition_impl(settings, attr):
-    return {"//command_line_option:platforms": [attr.target_platform] if attr.target_platform else settings["//command_line_option:platforms"]}
+    return {"//command_line_option:platforms": [str(attr.target_platform)] if attr.target_platform else settings["//command_line_option:platforms"]}
 
 payload_transition = transition(implementation = _transition_impl, inputs = ["//command_line_option:platforms"], outputs = ["//command_line_option:platforms"])
 
@@ -20,12 +20,21 @@ def payload_attrs():
     return {
         "binary": attr.label(allow_files = True, mandatory = True, cfg = payload_transition),
         "data": attr.label_list(allow_files = True, cfg = payload_transition),
-        "target_platform": attr.string(doc = "Optional canonical Windows platform label for source compilation."),
+        "target_platform": attr.label(providers = [platform_common.PlatformInfo], doc = "Optional Windows platform for source compilation."),
         "_payload_platform": attr.label(default = Label("//wine/private:payload_platform"), cfg = payload_transition),
         "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
     }
 
 def payload(ctx, arch):
+    """Resolve a PE executable and merge its complete payload/data runfiles.
+
+    Args:
+        ctx: Consuming rule context with payload_attrs.
+        arch: Declared payload CPU to validate after an optional transition.
+
+    Returns:
+        Executable File, executable tool and merged runfiles in a struct.
+    """
     target = ctx.attr.binary[0]
     if ctx.attr.target_platform:
         platform = ctx.attr._payload_platform[0][PayloadPlatformInfo]
@@ -38,9 +47,13 @@ def payload(ctx, arch):
         if len(files) != 1:
             fail("binary must be an executable target or exactly one prebuilt PE file")
         executable = files[0]
-    data = []
-    runfiles = info.default_runfiles.merge(info.data_runfiles)
-    for target in ctx.attr.data:
-        data.extend(target[DefaultInfo].files.to_list())
-        runfiles = runfiles.merge(target[DefaultInfo].default_runfiles).merge(target[DefaultInfo].data_runfiles)
-    return struct(file = executable, files_to_run = info.files_to_run if info.files_to_run.executable else executable, data = data, runfiles = runfiles)
+    infos = [info] + [target[DefaultInfo] for target in ctx.attr.data]
+    runfiles = ctx.runfiles(
+        transitive_files = depset([executable], transitive = [item.files for item in infos]),
+    ).merge_all([files for item in infos for files in [item.default_runfiles, item.data_runfiles]])
+    return struct(
+        file = executable,
+        files_to_run = info.files_to_run if info.files_to_run.executable else executable,
+        runfiles = runfiles,
+        repo_mapping_manifest = info.files_to_run.repo_mapping_manifest,
+    )
