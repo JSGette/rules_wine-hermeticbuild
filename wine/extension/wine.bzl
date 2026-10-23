@@ -1,4 +1,4 @@
-"""Pinned Wine distributions and composable named runner registrations."""
+"""Default Wine toolchains with per-platform prebuilt overrides."""
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("//wine/private:repositories.bzl", "registration_repository")
@@ -17,13 +17,6 @@ _DEFAULT = struct(
     identity = "Kron4ek Wine 11.0 amd64 WoW64",
     requirements = "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See README.md.",
 )
-
-_PLATFORMS = [
-    ("linux", "x86_64", "x86_64"),
-    ("linux", "aarch64", "aarch64"),
-    ("osx", "x86_64", "macos_x86_64"),
-    ("osx", "aarch64", "macos_aarch64"),
-]
 
 def _relative(path, field):
     if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path:
@@ -77,72 +70,39 @@ def _archive(name, tag):
 def _impl(ctx):
     root = {}
     inherited = {}
-    direct = {}
 
-    # Resolve semantic configurations first. Root choices override dependencies;
-    # equivalent dependency declarations share a repository, conflicts are errors.
+    # modules is breadth-first, with the root first. Root choices resolve any
+    # conflicting dependency overrides for the same executor platform.
     for mod in ctx.modules:
-        distributions = {"default": (_DEFAULT, "wine_default")}
-        scope = "_main"
-        if not mod.is_root:
-            scope = "{}_{}_{}_{}".format(len(mod.name), mod.name, len(str(mod.version)), mod.version)
+        seen = {}
         for tag in mod.tags.prebuilt:
-            if tag.name in distributions:
-                fail("duplicate Wine distribution {} in module {}".format(tag.name, mod.name))
-            distributions[tag.name] = (_distribution(tag), "wine_dist_" + scope + "_" + tag.name)
-        for tag in mod.tags.toolchains:
-            if tag.name == "wine_default" or tag.name.startswith("wine_dist_"):
-                fail("toolchains repository name uses reserved Wine distribution namespace: " + tag.name)
-            selected = {}
-            repos = {}
-            for os, arch, attribute in _PLATFORMS:
-                name = getattr(tag, attribute)
-                if not name:
-                    continue
-                if name not in distributions:
-                    fail("unknown Wine distribution {} in module {}".format(name, mod.name))
-                distribution, repo = distributions[name]
-                if distribution.arch != arch or distribution.exec_os != os:
-                    fail("{} distribution has platform {}/{}, requested {}/{}".format(
-                        name,
-                        distribution.exec_os,
-                        distribution.arch,
-                        os,
-                        arch,
-                    ))
-                key = os + "_" + arch
-                selected[key] = distribution
-                repos[key] = repo
-            configs = root if mod.is_root else inherited
-            if tag.name in configs and configs[tag.name].selected != selected:
-                # A root configuration may already resolve dependency conflicts.
-                if mod.is_root or tag.name not in root:
-                    fail("conflicting Wine toolchains repository {}; select it in the root module or use different names".format(
-                        tag.name,
-                    ))
-            if tag.name not in configs:
-                configs[tag.name] = struct(selected = selected, repos = repos)
-            if mod.is_root:
-                direct[tag.name] = direct.get(tag.name, True) and ctx.is_dev_dependency(tag)
-    inherited.update(root)
-    created = {}
-    for name, config in inherited.items():
-        registrations = {}
-        for key, distribution in config.selected.items():
-            repo = config.repos[key]
-            if repo not in created:
-                _archive(repo, distribution)
-                created[repo] = True
-            registrations[key] = {
-                "repository": repo,
-                "identity": distribution.identity,
-                "requirements": distribution.requirements,
-                "env": distribution.env,
-            }
-        registration_repository(name = name, distributions = json.encode(registrations))
+            key = tag.exec_os + "_" + tag.arch
+            if key in seen:
+                fail("duplicate Wine prebuilt for {} in module {}".format(key, mod.name))
+            seen[key] = True
+            distribution = _distribution(tag)
+            overrides = root if mod.is_root else inherited
+            if key not in root and key in inherited and inherited[key] != distribution:
+                fail("conflicting Wine prebuilts for {}; override this platform in the root module".format(key))
+            overrides[key] = distribution
+
+    distributions = {"linux_x86_64": _DEFAULT}
+    distributions.update(inherited)
+    distributions.update(root)
+    registrations = {}
+    for key, distribution in sorted(distributions.items()):
+        repo = "wine_prebuilt_" + key
+        _archive(repo, distribution)
+        registrations[key] = {
+            "repository": repo,
+            "identity": distribution.identity,
+            "requirements": distribution.requirements,
+            "env": distribution.env,
+        }
+    registration_repository(name = "wine_toolchains", distributions = json.encode(registrations))
     return ctx.extension_metadata(
-        root_module_direct_deps = [name for name in direct if not direct[name]],
-        root_module_direct_dev_deps = [name for name in direct if direct[name]],
+        root_module_direct_deps = ["wine_toolchains"] if ctx.root_module_has_non_dev_dependency else [],
+        root_module_direct_dev_deps = [] if ctx.root_module_has_non_dev_dependency else ["wine_toolchains"],
         reproducible = True,
     )
 
@@ -150,8 +110,8 @@ wine = module_extension(
     implementation = _impl,
     tag_classes = {
         "prebuilt": tag_class(
+            doc = "Override the Wine archive for one executor OS/CPU pair.",
             attrs = {
-                "name": attr.string(mandatory = True),
                 "arch": attr.string(mandatory = True, values = ["x86_64", "aarch64"]),
                 "exec_os": attr.string(default = "linux", values = ["linux", "osx"]),
                 "urls": attr.string_list(mandatory = True, allow_empty = False),
@@ -164,15 +124,6 @@ wine = module_extension(
                 "identity": attr.string(mandatory = True),
                 "requirements": attr.string(mandatory = True),
                 "env": attr.string_dict(doc = "Loader environment; supports {loader_dir} and {server_dir}."),
-            },
-        ),
-        "toolchains": tag_class(
-            attrs = {
-                "name": attr.string(mandatory = True),
-                "x86_64": attr.string(doc = "Distribution name, default for pinned Wine, empty for no Linux x86_64 runner."),
-                "macos_x86_64": attr.string(doc = "Native Intel macOS Wine distribution name."),
-                "macos_aarch64": attr.string(doc = "Native ARM64 macOS Wine distribution; no known default."),
-                "aarch64": attr.string(doc = "User-supplied native ARM64 distribution name; no default archive."),
             },
         ),
     },

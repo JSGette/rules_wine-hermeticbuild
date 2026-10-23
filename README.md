@@ -27,7 +27,6 @@ Until this module is published, consume a checkout through a local override:
 bazel_dep(name = "rules_wine", version = "0.1.0")
 local_path_override(module_name = "rules_wine", path = "../rules_wine")
 wine = use_extension("@rules_wine//wine/extension:wine.bzl", "wine")
-wine.toolchains(name = "wine_toolchains", x86_64 = "default")
 use_repo(wine, "wine_toolchains")
 register_toolchains("@wine_toolchains//:all")
 ```
@@ -191,7 +190,6 @@ to merge these declarations would add a public configuration contract.
 
 ```starlark
 wine.prebuilt(
-    name = "my_arm64",
     arch = "aarch64",
     exec_os = "linux",  # "osx" for native macOS Wine.
     urls = ["https://your-artifact-store/wine-arm64.tar.xz"],
@@ -203,23 +201,24 @@ wine.prebuilt(
     identity = "your Wine build and revision",
     requirements = "your audited host dependency baseline",
 )
-wine.toolchains(name = "my_toolchains", aarch64 = "my_arm64")
-use_repo(wine, "my_toolchains")
-register_toolchains("@my_toolchains//:all")
+use_repo(wine, "wine_toolchains")
+register_toolchains("@wine_toolchains//:all")
 ```
 
 `http_archive` owns download, checksum, mirror retry and extraction. Archive paths
 must stay relative. Loader/server must be native ELF or Mach-O executables;
 the supervisor checks their CPU headers before launch (no Rosetta fallback).
-Shell-script Wine launchers are not accepted. Keep the complete installation layout. Named distributions
-are module-local; generated distribution identities are module-qualified.
-Root toolchain declarations override dependencies with the same registration
-name. Equivalent dependency declarations share a repository; conflicting
-declarations require a root choice or separate names. `wine_default` and the
-`wine_dist_` prefix are reserved for internal distributions. Archive repository
-names derive from module identity, independent of module traversal order.
-Select `x86_64`, `aarch64`, `macos_x86_64`, and `macos_aarch64`
-independently; absent Linux/macOS entries are omitted, never substituted.
+Shell-script Wine launchers are not accepted. Keep the complete installation layout.
+
+The extension always generates `wine_toolchains`, like `rules_qemu`'s conventional
+toolchain repository. It includes pinned Linux x86-64 Wine and native Windows
+x86-64/ARM64 registrations. Each `prebuilt` overrides or adds one `exec_os`/`arch`
+pair directly; no named distribution sets or `.toolchains(...)` call is needed.
+Linux ARM64 and macOS require a custom prebuilt; missing platforms are omitted,
+never substituted. A root override takes precedence over dependency declarations
+for the same platform. Identical dependency declarations share an archive;
+conflicting ones require a root override. Each module may declare a platform only
+once. Internal archive names are derived from the executor OS and CPU.
 
 Distribution `env` may supply loader library paths using `{loader_dir}` and
 `{server_dir}`, e.g. `DYLD_FALLBACK_LIBRARY_PATH = "{loader_dir}/../../libs"`.

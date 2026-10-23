@@ -55,14 +55,16 @@ e2e/test_starlark.sh
 e2e/test_extension.sh
 ```
 
-The consumer exercises the public module setup. The script tests a named custom
+The consumer exercises the public module setup. The script tests a custom
 archive through `http_archive`; supplying an incorrect checksum must fail fetching.
 Keep fixture compilers and test helpers out of production dependency paths.
 The Starlark and extension scripts retain their temporary workspaces for
-inspection. Each accepts an optional ruleset checkout path: the same checks fail
-against baseline `0f17c44` at the Aa/BB action configuration collision and duplicate
-transitive registration name respectively, and pass after the cleanup. The
-Starlark script also checks aliases under `select()`, executable sidecar outputs,
+inspection. Each accepts an optional ruleset checkout path. The extension checks
+automatic default registration, per-platform archive overrides, identical
+dependency declarations, root precedence, conflicts, and dev-only usage. Its
+no-tag setup fails against `d6b9e95`, which required a `.toolchains(...)` call.
+The Starlark script checks the Aa/BB action configuration collision (failing on
+`0f17c44`), aliases under `select()`, executable sidecar outputs,
 an external caller's apparent repository mapping and expected analysis errors.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set

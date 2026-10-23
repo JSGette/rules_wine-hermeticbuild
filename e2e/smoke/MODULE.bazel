@@ -7,10 +7,6 @@ local_path_override(
 )
 
 wine = use_extension("@rules_wine//wine/extension:wine.bzl", "wine")
-wine.toolchains(
-    name = "wine_toolchains",
-    x86_64 = "default",
-)
 use_repo(wine, "wine_toolchains")
 
 register_toolchains("@wine_toolchains//:all")

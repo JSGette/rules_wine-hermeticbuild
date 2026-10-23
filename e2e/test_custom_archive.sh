@@ -10,10 +10,9 @@ module(name = "custom_wine_consumer")
 bazel_dep(name = "rules_wine", version = "0.1.0")
 local_path_override(module_name = "rules_wine", path = "$root")
 wine = use_extension("@rules_wine//wine/extension:wine.bzl", "wine")
-wine.prebuilt(name = "custom", arch = "x86_64", urls = ["file://$archive"], sha256 = "$checksum", strip_prefix = "wine-11.0-amd64-wow64", identity = "Local Kron4ek Wine11.0 archive override", requirements = "Ubuntu24.04 console baseline")
-wine.toolchains(name = "custom_toolchains", x86_64 = "custom")
-use_repo(wine, "custom_toolchains")
-register_toolchains("@custom_toolchains//:all")
+wine.prebuilt(exec_os = "linux", arch = "x86_64", urls = ["file://$archive"], sha256 = "$checksum", strip_prefix = "wine-11.0-amd64-wow64", identity = "Local Kron4ek Wine11.0 archive override", requirements = "Ubuntu24.04 console baseline")
+use_repo(wine, "wine_toolchains")
+register_toolchains("@wine_toolchains//:all")
 MODULE
 cp "$root/e2e/smoke/BUILD.bazel" "$scratch/BUILD.bazel"
 cp "$root/e2e/smoke/.bazelrc" "$scratch/.bazelrc"
