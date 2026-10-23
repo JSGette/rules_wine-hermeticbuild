@@ -1,12 +1,13 @@
 # rules_wine implementation plan
 
-Status: first implementation iteration complete; independent review pending.
-See VALIDATION.md for demonstrated behavior and unverified platform boundaries.
+Status: initial implementation reviewed and merged into main. This document
+preserves the design plan; see [testing and maintenance](tests/README.md) for
+current verification commands and unverified platform boundaries.
 
 Scope amendment (2026-10-23): user added native macOS execution and explicitly
 rejected Rosetta. Darwin x86_64/ARM64 custom-runtime support is implemented; no
 public ARM64 tar default is invented. The researched experimental native ARM64
-runtime runs its shipped cmd but rejects independent payloads; see VALIDATION.md.
+runtime runs its shipped cmd but rejects independent payloads; see tests/README.md.
 Date: 2026-10-23.
 
 ## 1. Purpose and design contract
@@ -255,14 +256,11 @@ runfiles environment values cannot simply be assumed usable by Windows code.
 
 ## 8. Implementation sequence and review boundaries
 
-Historical planning context: this directory was initially empty and not a Git
-checkout. It has since been initialized on main with the recorded plan, and the
-user approved the three-layer stack before implementation. The implemented
-branches are codex/wine-toolchains, codex/wine-actions and codex/wine-tests, tracked
-by gh stack above main. No remote is configured and nothing has been published.
+Historical planning context: the repository was created for this implementation.
+The three layers below were implemented, reviewed, and merged into main.
 
 The acceptance lists below remain the intended validation criteria, not a claim
-that every platform has executed. VALIDATION.md records passing checks and the
+that every platform has executed. tests/README.md records verification commands and the
 explicit native Windows, ARM64, source-compiler and experimental macOS limits.
 
 1. **Runtime toolchains and acquisition** — extension, providers, native/Wine

@@ -1,1 +1,1 @@
-exports_files(["IMPLEMENTATION_PLAN.md"])
+# Workspace package. Public rules live under //wine.

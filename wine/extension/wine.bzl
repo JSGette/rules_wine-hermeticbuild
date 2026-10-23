@@ -15,7 +15,7 @@ _DEFAULT = struct(
     exec_os = "linux",
     env = {},
     identity = "Kron4ek Wine 11.0 amd64 WoW64",
-    requirements = "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See VALIDATION.md.",
+    requirements = "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See README.md.",
 )
 
 def _safe(path, field):

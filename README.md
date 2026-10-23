@@ -42,7 +42,7 @@ SHA256 `39574efa1132c3ca0d5c77dd2eddbe4a49cca0d6cc2c290ff4924493a1c40314`.
 It requires the host glibc ELF interpreter, libc/libdl/libpthread and libgcc_s.
 Ubuntu 24.04 console execution was verified; missing FreeType emits warnings.
 Other Windows subsystems can require additional host libraries. A pinned archive
-is not a fully bundled Linux userspace. See [validation evidence](VALIDATION.md).
+is not a fully bundled Linux userspace. See [testing and maintenance](tests/README.md).
 
 ## Actions, binaries and tests
 
@@ -187,8 +187,9 @@ independently; absent Linux/macOS entries are omitted, never substituted.
 Distribution `env` may supply loader library paths using `{loader_dir}` and
 `{server_dir}`, e.g. `DYLD_FALLBACK_LIBRARY_PATH = "{loader_dir}/../../libs"`.
 Lifecycle variables such as WINEPREFIX, WINESERVER and WINELOADER are reserved.
-The supervisor initializes through a distribution-relative builtin cmd.exe when
-available, falling back to Wine's builtin lookup for other layouts.
+The supervisor initializes each private prefix with Wine's `wineboot.exe --init`.
+Wine owns lookup of its builtin programs; no distribution-specific DLL directory
+is assumed.
 
 For a complete override, define `windows_runner_toolchain` from
 `@rules_wine//wine:toolchain.bzl` with `arch`, `backend`, `launcher`, and for Wine
@@ -216,7 +217,8 @@ Prefix isolation is not a security sandbox. No shared/prepared prefixes,
 winetricks, machine Wine, shell utilities or Python are in the production runtime.
 Stronger filesystem/process/network isolation, immutable prefix seeds, GUI/.NET,
 coverage and workers remain future work. Windows adapter descendant cancellation
-has not been runtime-verified. See VALIDATION.md for exact tested boundaries.
+has not been runtime-verified. See [testing and maintenance](tests/README.md) for
+the verification commands and platform gaps.
 
 Support binaries are checked in for Linux, Windows and macOS, x86_64 and ARM64.
 Downstream builds need no compiler. Maintenance uses Go 1.25.3 and no third-party
@@ -224,11 +226,7 @@ Go modules: `tools/build_runtime.sh /absolute/path/to/go`; SHA256SUMS records th
 bytes. `tools/build_fixtures.sh` builds development-only payloads with Go and
 clang/lld; these tools never become consumer dependencies.
 
-Native macOS ARM64 Wine exists experimentally. A signed DiagBridge runtime
-([v0.2.5](https://github.com/citi94/diagbridge/releases/tag/v0.2.5)) ran its shipped
-ARM64 cmd.exe on macOS26.5.2 without Rosetta. Independent ARM64 Go and minimal
-no-CRT payloads failed or hung in the same runtime, including raw unwrapped
-reproductions. The custom macOS backend is implemented; general external-payload
-execution is **not validated** with this distribution. Upstream ships a DMG, so
-there is no invented public tar default: supply an appropriately licensed,
-compatible native archive yourself. No signing/security settings are changed.
+macOS ARM64 requires a compatible native Wine archive. The experimental build
+evaluated so far could run its bundled programs but failed independent ARM64
+executables outside Bazel too. General external-program execution remains
+**unverified**, and no macOS archive is selected by default.

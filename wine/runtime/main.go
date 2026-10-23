@@ -278,18 +278,8 @@ func invoke(c configuration, extra []string) int {
 		}
 		args[i] = value
 	}
-	env := []string{}
-	for _, entry := range os.Environ() {
-		// Native same-CPU execution only; never inherit the fork's x86 hybrid opt-in.
-		if !strings.HasPrefix(entry, "WINEHYBRIDX86=") {
-			env = append(env, entry)
-		}
-	}
+	env := os.Environ()
 	for key, value := range c.Env {
-		if key == "WINEHYBRIDX86" && value != "" {
-			fmt.Fprintln(os.Stderr, "rules_wine: CPU translation is unsupported")
-			return 125
-		}
 		converted, err := convert(value, c.Runfiles)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -347,7 +337,7 @@ func invoke(c configuration, extra []string) int {
 	}
 	for key, value := range c.RuntimeEnv {
 		switch key {
-		case "WINEPREFIX", "WINEARCH", "WINELOADER", "WINESERVER", "WINEDLLOVERRIDES", "WINEHYBRIDX86", "HOME", "TMPDIR", "PATH":
+		case "WINEPREFIX", "WINEARCH", "WINELOADER", "WINESERVER", "WINEDLLOVERRIDES", "HOME", "TMPDIR", "PATH":
 			fmt.Fprintln(os.Stderr, "rules_wine: reserved runtime environment", key)
 			return 125
 		}
@@ -377,11 +367,7 @@ func invoke(c configuration, extra []string) int {
 		execute(c.Server, []string{"-w"}, env, 5*time.Second, quiet)
 		reapChildren()
 	}()
-	bootstrap := filepath.Join(filepath.Dir(c.Loader), "..", "lib", "wine", c.Arch+"-windows", "cmd.exe")
-	if _, err := os.Stat(bootstrap); err != nil {
-		bootstrap = "cmd.exe"
-	}
-	if status := execute(c.Loader, []string{bootstrap, "/c", "exit", "0"}, env, 60*time.Second, signals); status != 0 {
+	if status := execute(c.Loader, []string{"wineboot.exe", "--init"}, env, 60*time.Second, signals); status != 0 {
 		return status
 	}
 	return execute(c.Loader, append([]string{windowsPath(c.Payload)}, args...), env, 0, signals)

@@ -190,7 +190,7 @@
   "moduleExtensions": {
     "//wine/extension:wine.bzl%wine": {
       "general": {
-        "bzlTransitiveDigest": "dR3AVkixVr4J8J9qHu4RLo49jQ/9F0GzuwJmFa25Vqw=",
+        "bzlTransitiveDigest": "/q0erPcsw9AHTlLt18mCkzAm9Vu9aAo+1G/bXnNQmUM=",
         "usagesDigest": "gWXwWCGpj4qwoFXb2COLbre4Av2E0CL5iXAsEXpyGZ4=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -206,7 +206,7 @@
                 "linux_x86_64": "Kron4ek Wine 11.0 amd64 WoW64"
               },
               "requirements": {
-                "linux_x86_64": "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See VALIDATION.md."
+                "linux_x86_64": "Linux glibc ELF interpreter; glibc, libm, libgcc_s; optional subsystem libraries depend on payload. See README.md."
               },
               "environments": {
                 "linux_x86_64": "{}"
