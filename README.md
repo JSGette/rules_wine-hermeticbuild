@@ -117,7 +117,8 @@ literal. Arbitrary Make variables and nested `{windows_path:...}` argument
 wrappers are unsupported. Adapter locations use canonical runfiles keys; action
 locations use execroot paths.
 Locations of executable targets name their executable; other targets expose
-their files in sorted path order. Aliases and configurable arguments are
+their files in sorted path order. Location targets must produce at least one file.
+Aliases and configurable arguments are
 supported on Bazel 8.5 and 9.3. Bazel hides original alias labels from Starlark;
 a small compatibility bridge compares complete native expansions against typed
 File sets, with no shell parsing. If an alias ambiguously identifies both an
@@ -239,7 +240,8 @@ constraints and no final-output constraints. Binary adapters additionally have
 matching target OS/CPU constraints; test adapters follow the test execution group
 and have no target constraints. `WindowsRunnerInfo` and `WineRuntimeInfo` expose
 the advanced contract. `launcher` is an executable dependency in execution
-configuration; its FilesToRunProvider and full runfiles are preserved. Runtime
+configuration; its FilesToRunProvider and full runfiles are preserved, including
+executable targets with sidecar outputs. Runtime
 loader/server/files dependencies also use execution configuration.
 
 ## Isolation, runtime maintenance and limits

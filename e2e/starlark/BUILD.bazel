@@ -43,6 +43,27 @@ stub(
     data = ["launcher_data"],
 )
 
+stub(
+    name = "sidecar_launcher",
+    data = ["launcher_data"],
+    sidecar = True,
+)
+
+windows_runner_toolchain(
+    name = "sidecar_implementation",
+    arch = "x86_64",
+    backend = "wine",
+    launcher = ":sidecar_launcher",
+    loader = "loader",
+    server = "server",
+)
+
+toolchain(
+    name = "sidecar_runner",
+    toolchain = ":sidecar_implementation",
+    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+)
+
 stub(name = "built_loader")
 
 windows_runner_toolchain(
@@ -98,6 +119,29 @@ filegroup(
         "data/a",
         "data/b",
     ],
+)
+
+filegroup(name = "empty")
+
+alias(
+    name = "empty_alias",
+    actual = "empty",
+)
+
+windows_binary(
+    name = "empty_location",
+    arch = "x86_64",
+    arguments = ["$(locations :empty)"],
+    binary = "payload.exe",
+    data = [":empty"],
+)
+
+windows_binary(
+    name = "empty_alias_location",
+    arch = "x86_64",
+    arguments = ["$(locations :empty_alias)"],
+    binary = "payload.exe",
+    data = [":empty_alias"],
 )
 
 alias(

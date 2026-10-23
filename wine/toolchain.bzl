@@ -1,20 +1,26 @@
 """Windows runner providers and user-authored toolchain implementation."""
 
-WineRuntimeInfo = provider("Immutable Wine distribution built for the selected executor.", fields = {
-    "loader": "Native Wine ELF/Mach-O loader File; installation layout preserved.",
-    "server": "Matching wineserver File.",
-    "files": "Complete immutable distribution depset.",
-    "identity": "Distribution/version provenance.",
-    "requirements": "Host library requirements, not inferred hermeticity.",
-    "env": "Distribution loader environment; {loader_dir} and {server_dir} placeholders.",
-})
-WindowsRunnerInfo = provider("Execution contract for same-CPU Windows payloads.", fields = {
-    "arch": "Same-CPU Windows payload architecture.",
-    "backend": "wine or native.",
-    "launcher": "Executor-native supervisor/adapter FilesToRunProvider, or None for direct native actions.",
-    "runtime": "WineRuntimeInfo or None.",
-    "runfiles": "Complete executor-native launcher runfiles.",
-})
+WineRuntimeInfo = provider(
+    "Immutable Wine distribution built for the selected executor.",
+    fields = {
+        "loader": "Native Wine ELF/Mach-O loader File; installation layout preserved.",
+        "server": "Matching wineserver File.",
+        "files": "Complete immutable distribution depset.",
+        "identity": "Distribution/version provenance.",
+        "requirements": "Host library requirements, not inferred hermeticity.",
+        "env": "Distribution loader environment; {loader_dir} and {server_dir} placeholders.",
+    },
+)
+WindowsRunnerInfo = provider(
+    "Execution contract for same-CPU Windows payloads.",
+    fields = {
+        "arch": "Same-CPU Windows payload architecture.",
+        "backend": "wine or native.",
+        "launcher": "Executor-native supervisor/adapter FilesToRunProvider, or None for direct native actions.",
+        "runtime": "WineRuntimeInfo or None.",
+        "runfiles": "Complete executor-native launcher runfiles.",
+    },
+)
 
 def _impl(ctx):
     runtime = None
@@ -26,7 +32,10 @@ def _impl(ctx):
         runtime = WineRuntimeInfo(
             loader = ctx.file.loader,
             server = ctx.file.server,
-            files = depset([ctx.file.loader, ctx.file.server], transitive = [ctx.attr.files[DefaultInfo].files] if ctx.attr.files else []),
+            files = depset(
+                [ctx.file.loader, ctx.file.server],
+                transitive = [ctx.attr.files[DefaultInfo].files] if ctx.attr.files else [],
+            ),
             identity = ctx.attr.identity,
             requirements = ctx.attr.requirements,
             env = ctx.attr.env,
@@ -48,7 +57,7 @@ windows_runner_toolchain = rule(
     attrs = {
         "arch": attr.string(mandatory = True, values = ["x86_64", "aarch64"]),
         "backend": attr.string(mandatory = True, values = ["native", "wine"]),
-        "launcher": attr.label(executable = True, allow_single_file = True, cfg = "exec"),
+        "launcher": attr.label(executable = True, cfg = "exec"),
         "loader": attr.label(allow_single_file = True, cfg = "exec"),
         "server": attr.label(allow_single_file = True, cfg = "exec"),
         "files": attr.label(cfg = "exec"),

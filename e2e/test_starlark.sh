@@ -21,6 +21,9 @@ grep -q 'launcher_data' actions.txt
 grep -q 'cash\$money' actions.txt
 query '//:dollar_path' '//:generated_runner' generated.txt
 grep -Eq 'bazel-out/[^ /]*-opt-exec[^ /]*/bin/built_loader.sh' generated.txt
+query 'deps(//:dollar_path)' '//:sidecar_runner' sidecar.txt
+grep -q 'sidecar_launcher.json' sidecar.txt
+grep -q 'launcher_data' sidecar.txt
 query '//:only_test_adapter_test' '//:test_adapter' test.txt
 bazel aquery '//:collision' --config=remote --extra_execution_platforms=//:audit_windows --extra_toolchains=//:native_runner > native.txt
 if grep -Eq 'wine.json|launcher_data|supervisor' native.txt; then
@@ -35,7 +38,7 @@ jq -e '.args == ["{windows_runfile:\"_main/data/a}b\"}"]' bazel-bin/braces.json
 jq -e '.args == ["{windows_runfile:\"_main/root_location\"}", "{windows_runfile:\"_main/root_location\"}"]' bazel-bin/executable_locations.json
 jq -e '.args | length == 3' bazel-bin/selected_aliases.json
 grep -q 'launcher_data' bazel-bin/data_adapter.runfiles_manifest
-for target in embedded_plural single_multiple undeclared; do
+for target in embedded_plural single_multiple undeclared empty_location empty_alias_location; do
   if query "//:$target" '//:adapter' "$target.txt" 2> "$target.log"; then
     printf 'expected analysis failure: %s\n' "$target" >&2
     exit 1
@@ -44,4 +47,6 @@ done
 grep -q 'plural file expression must be a complete argument' embedded_plural.log
 grep -q 'requires one file' single_multiple.log
 grep -Eq 'must be declared|not a declared prerequisite' undeclared.log
+grep -q 'must produce at least one file' empty_location.log
+grep -q 'expands to no files' empty_alias_location.log
 printf '%s\n' 'PASS: typed argv, action identity, exec dependencies, aliases, native actions and independent test group'

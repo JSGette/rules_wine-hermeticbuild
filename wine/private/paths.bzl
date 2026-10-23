@@ -1,7 +1,8 @@
-"""Typed argv expansion; location values never pass through a shell string."""
+"""Typed argv expansion without parsing shell-quoted paths."""
 
 def path_marker(value, runfile = False):
-    return "{windows_runfile:" + json.encode(value) + "}" if runfile else "{windows_path:" + json.encode(value) + "}"
+    marker = "windows_runfile" if runfile else "windows_path"
+    return "{" + marker + ":" + json.encode(value) + "}"
 
 def runfile_path(ctx, file):
     return file.short_path[3:] if file.short_path.startswith("../") else ctx.workspace_name + "/" + file.short_path
@@ -11,7 +12,9 @@ def _callable_path(file):
 
 def _files(target):
     info = target[DefaultInfo]
-    return [info.files_to_run.executable] if info.files_to_run.executable else sorted(info.files.to_list(), key = _callable_path)
+    if info.files_to_run.executable:
+        return [info.files_to_run.executable]
+    return sorted(info.files.to_list(), key = _callable_path)
 
 def _location_fingerprint(files):
     # Mirror Bazel's LocationExpander/ShellEscaper serialization, not a shell
@@ -21,7 +24,8 @@ def _location_fingerprint(files):
     safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%-_+:,./~"
     result = []
     for path in sorted([_callable_path(file) for file in files]):
-        result.append(path if not path.startswith("~") and all([char in safe for char in path.elems()]) else "'" + path.replace("'", "'\\''") + "'")
+        unquoted = not path.startswith("~") and all([char in safe for char in path.elems()])
+        result.append(path if unquoted else "'" + path.replace("'", "'\\''") + "'")
     return " ".join(result)
 
 def _location_files(ctx, spelling, targets, labels):
@@ -33,6 +37,8 @@ def _location_files(ctx, spelling, targets, labels):
     elif not spelling.startswith("@"):
         label = ctx.label.relative(spelling)
     if label in labels:
+        if not labels[label]:
+            fail("location target must produce at least one file: " + spelling)
         return labels[label]
 
     # Alias edges expose their actual Target.label. Let Bazel resolve the alias
@@ -42,8 +48,10 @@ def _location_files(ctx, spelling, targets, labels):
     matches = None
     for target in targets:
         info = target[DefaultInfo]
-        if expanded in [_location_fingerprint(info.files.to_list()), _location_fingerprint(_files(target))]:
-            files = _files(target)
+        files = _files(target)
+        if not files:
+            continue
+        if expanded in [_location_fingerprint(info.files.to_list()), _location_fingerprint(files)]:
             if matches != None and matches != files:
                 fail("ambiguous executable/output alias; use the declared target's canonical label: " + spelling)
             matches = files
@@ -51,7 +59,14 @@ def _location_files(ctx, spelling, targets, labels):
         fail("location must be declared in binary, srcs or data and match Bazel's supported File-set encoding: " + spelling)
     return matches
 
-def expand_arguments(ctx, targets, *, runfiles = False, windows = True, variables = {}, runfile_entries = {}):
+def expand_arguments(
+        ctx,
+        targets,
+        *,
+        runfiles = False,
+        windows = True,
+        variables = {},
+        runfile_entries = {}):
     """Expand declared labels and explicit output/source variables once.
 
     Each argument remains one argv element. A standalone plural expression
