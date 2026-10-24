@@ -11,7 +11,6 @@ def _impl(ctx):
     config = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.symlink(output = executable, target_file = ctx.executable._verify, is_executable = True)
     ctx.actions.write(config, json.encode({
-        "AdapterCLI": ctx.attr.adapter_cli_only,
         "PayloadLayout": ctx.attr.payload_layout,
         "Companion": _rloc(ctx, ctx.file.companion) if ctx.file.companion else "",
         "Launcher": _rloc(ctx, runner.launcher.executable),
@@ -36,7 +35,6 @@ runtime_contract_test = rule(
     implementation = _impl,
     test = True,
     attrs = {
-        "adapter_cli_only": attr.bool(),
         "payload_layout": attr.bool(),
         "companion": attr.label(allow_single_file = True),
         "payload": attr.label(allow_single_file = True, mandatory = True),

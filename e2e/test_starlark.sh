@@ -13,7 +13,7 @@ printf 'Verification workspace: %s\n' "$scratch"
 cd "$scratch"
 trap 'bazel shutdown >/dev/null 2>&1' EXIT
 query() {
-  bazel aquery "$1" --config=remote --extra_execution_platforms=//:audit_exec --extra_toolchains="$2" > "$scratch/$3"
+  bazel aquery "$1" --config=remote --extra_execution_platforms=//:audit_exec --extra_toolchains="$2" --lockfile_mode=off > "$scratch/$3"
 }
 query 'deps(//:collision)' '//:runner' actions.txt
 grep -q 'launcher_data' actions.txt
@@ -22,29 +22,24 @@ grep -Eq 'bazel-out/[^ /]*-opt-exec[^ /]*/bin/built_loader.sh' generated.txt
 query 'deps(//:collision)' '//:sidecar_runner' sidecar.txt
 grep -q 'sidecar_launcher.json' sidecar.txt
 grep -q 'launcher_data' sidecar.txt
-bazel aquery '//:collision' --config=remote --extra_execution_platforms=//:audit_windows --extra_toolchains=//:native_runner > native.txt
+bazel aquery '//:collision' --config=remote --extra_execution_platforms=//:audit_windows --extra_toolchains=//:native_runner --lockfile_mode=off > native.txt
 if grep -Eq 'wine.json|launcher_data|supervisor' native.txt; then
   printf '%s\n' 'native action acquired a launcher or Wine configuration' >&2
   exit 1
 fi
-bazel build //:root_location //:space_adapter //:ambiguous //:escaped //:braces //:data_adapter //:executable_locations //:selected_aliases //:apparent_platform @caller//:mapped --config=remote --extra_execution_platforms=//:audit_exec --extra_toolchains=//:adapter
-jq -e '.args == ["{windows_runfile:\"_main/a\"}"]' bazel-bin/root_location.json
-jq -e '.args == ["{windows_runfile:\"_main/data/a\"}", "{windows_runfile:\"_main/data/b\"}"]' bazel-bin/ambiguous.json
-jq -e '.args == ["$(location :data/a)"]' bazel-bin/escaped.json
-jq -e '.args == ["{windows_runfile:\"_main/data/a}b\"}"]' bazel-bin/braces.json
-jq -e '.args == ["{windows_runfile:\"_main/root_location\"}", "{windows_runfile:\"_main/root_location\"}"]' bazel-bin/executable_locations.json
-jq -e '.args | length == 3' bazel-bin/selected_aliases.json
+bazel build //:data_adapter //:apparent_platform @caller//:mapped --config=remote --jobs=80 --lockfile_mode=off --platforms=//:audit_exec --extra_execution_platforms=//:audit_exec --extra_toolchains=//:adapter
+jq -e '.runfiles == true and .arch == "x86_64" and .args == null and .env == null' bazel-bin/data_adapter.json
 grep -q 'launcher_data' bazel-bin/data_adapter.runfiles_manifest
-grep -q 'only_via_alias' bazel-bin/data_adapter.runfiles_manifest
-for target in embedded_plural single_multiple undeclared empty_location empty_alias_location; do
-  if query "//:$target" '//:adapter' "$target.txt" 2> "$target.log"; then
+grep -q 'alias.txt.*only_via_alias' bazel-bin/data_adapter.runfiles_manifest
+bazel cquery //:data_adapter --config=remote --platforms=//:audit_exec --extra_execution_platforms=//:audit_exec --extra_toolchains=//:adapter --lockfile_mode=off --output=starlark --starlark:expr='providers(target)["RunEnvironmentInfo"].environment' > environment.txt
+grep -q 'binary-owned environment' environment.txt
+bazel aquery 'deps(//:data_adapter)' --config=remote --platforms=//:audit_exec --extra_execution_platforms=//:audit_exec --extra_toolchains=//:adapter > adapter.txt
+grep -q 'finalize' adapter.txt
+for target in wrong_platform wrong_cpu; do
+  if bazel aquery "//:$target" --config=remote --platforms=//:audit_exec --extra_execution_platforms=//:audit_exec --extra_toolchains=//:adapter > "$target.txt" 2> "$target.log"; then
     printf 'expected analysis failure: %s\n' "$target" >&2
     exit 1
   fi
+  grep -q 'target_platform must be Windows/x86_64' "$target.log"
 done
-grep -q 'plural file expression must be a complete argument' embedded_plural.log
-grep -q 'requires one file' single_multiple.log
-grep -Eq 'must be declared|not a declared prerequisite' undeclared.log
-grep -q 'must produce at least one file' empty_location.log
-grep -q 'expands to no files' empty_alias_location.log
-printf '%s\n' 'PASS: typed argv, action identity, exec dependencies, aliases and native actions'
+printf '%s\n' 'PASS: executable runfiles, payload platforms, action identity, exec dependencies and native actions'

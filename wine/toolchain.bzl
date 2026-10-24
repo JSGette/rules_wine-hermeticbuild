@@ -16,7 +16,7 @@ WindowsRunnerInfo = provider(
     fields = {
         "arch": "Same-CPU Windows payload architecture.",
         "backend": "wine or native.",
-        "launcher": "Executor-native supervisor/adapter FilesToRunProvider, or None for direct native actions.",
+        "launcher": "Linux/macOS Wine supervisor FilesToRunProvider, or None for direct native actions.",
         "runtime": "WineRuntimeInfo or None.",
         "runfiles": "Complete executor-native launcher runfiles.",
     },
@@ -40,8 +40,8 @@ def _impl(ctx):
             requirements = ctx.attr.requirements,
             env = ctx.attr.env,
         )
-    elif ctx.file.loader or ctx.file.server or ctx.attr.files:
-        fail("native backend must not depend on Wine")
+    elif ctx.attr.launcher or ctx.file.loader or ctx.file.server or ctx.attr.files:
+        fail("native backend must not depend on a launcher or Wine")
     launcher = ctx.attr.launcher[DefaultInfo] if ctx.attr.launcher else None
     info = WindowsRunnerInfo(
         arch = ctx.attr.arch,

@@ -9,7 +9,7 @@ For a native local Linux worker, omit `--config=remote`.
 ```sh
 bazel test //tests:integration --config=remote
 bazel build //tests:generate //tests:adapter_tool \
-  //tests:dll //tests:response //tests:param_file //tests:location_tool \
+  //tests:param_file \
   //tests:additional_tools //tests:default_group //tests:default_group_tools \
   //tests:external_tools //tests:distinct_actions \
   --config=remote
@@ -22,9 +22,11 @@ test checks concurrent private
 prefixes, cancellation ownership, descendant cleanup, exit status, architecture
 rejection, and unchanged input files. The layout test creates real symlinks because
 remote execution can materialize ordinary runfiles and hide local layout bugs.
-The argv regression asserts exact records for spaces, empty strings, dollars,
-braces, Unicode, source/generated/external files, escaped expressions and plural
-cardinality. A source-built Windows consumer uses the standard C++ runfiles
+The argv regression passes arguments through the generated launcher and asserts
+exact records for spaces, empty strings, Unicode, literal dollar/location strings,
+opaque options and leading `--config`/`--` arguments. Invocation arguments belong
+to the consumer; the adapter has no expression-expansion API. A source-built
+Windows consumer uses the standard C++ runfiles
 library through `windows_actions.run` with its `FilesToRunProvider` to verify
 apparent-repository mapping and alias-only runfiles. Bazel supplies the runfiles
 layout; the ruleset does not write a replacement manifest.
@@ -60,7 +62,7 @@ dependency declarations, root precedence, conflicts, and dev-only usage. Its
 no-tag setup fails against `d6b9e95`, which required a `.toolchains(...)` call.
 The Starlark script checks the Aa/BB action configuration collision (failing on
 `0f17c44`), aliases under `select()`, executable sidecar outputs,
-an external caller's apparent repository mapping and expected analysis errors.
+an external executable's data and expected payload-platform analysis errors.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
 `USE_BAZEL_VERSION` when running the common suite.
@@ -81,8 +83,10 @@ and checked-in Windows test binaries in sync.
 
 The supervisor uses `rules_cc`'s runfiles library for discovery and manifest
 parsing. Its `EnvVars()` are forwarded to the payload, with Wine path conversion.
-Environment overrides, Windows path markers, configured arguments and Wine lifecycle
-management remain supervisor responsibilities.
+`hermetic_launcher` resolves the supervisor/configuration and forwards argv.
+Explicit action environment, Windows path markers and Wine lifecycle management
+remain supervisor responsibilities. The supervisor is Linux/macOS-only; its
+cross-compilation check covers those four OS/CPU combinations.
 
 ## Verification boundaries
 

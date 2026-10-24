@@ -43,6 +43,7 @@ query default.txt
 grep -q 'Kron4ek Wine 11.0' default.txt
 grep -q ':windows_x86_64 ' default.txt
 grep -q ':windows_aarch64 ' default.txt
+if grep -Eq ':windows_(x86_64|aarch64)_adapter' default.txt; then exit 1; fi
 if grep -Eq ':linux_aarch64 |:osx_' default.txt; then exit 1; fi
 dependency first "$(prebuilt linux x86_64 shared)"
 dependency second "$(prebuilt linux x86_64 shared)"

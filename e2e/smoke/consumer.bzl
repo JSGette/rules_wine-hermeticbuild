@@ -18,7 +18,7 @@ def _impl(ctx):
     adapter_output = ctx.actions.declare_file("adapter.json")
     ctx.actions.run(
         executable = ctx.attr.adapter[DefaultInfo].files_to_run,
-        arguments = ["--output", windows_actions.path(ctx, adapter_output, "x86_64")],
+        arguments = ["--output", windows_actions.path(ctx, adapter_output, "x86_64"), "adapter-consumer"],
         outputs = [adapter_output],
     )
     return [DefaultInfo(files = depset([action_output, adapter_output]))]

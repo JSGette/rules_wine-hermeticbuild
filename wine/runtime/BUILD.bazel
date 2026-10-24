@@ -18,9 +18,10 @@ cc_binary(
         "-Wextra",
         "-Werror",
     ],
-    linkopts = select({
-        "@platforms//os:windows": ["-lshell32"],
-        "//conditions:default": [],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:osx": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = ["//visibility:public"],
     deps = [

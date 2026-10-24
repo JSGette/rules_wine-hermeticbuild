@@ -43,7 +43,6 @@ cc_binary(
 test_suite(
     name = "integration",
     tests = [
-        "adapter_cli_test",
         "argv_test",
         "payload_layout_test",
         "runtime_contract_test",
@@ -106,77 +105,9 @@ tools_action(
     default_group = True,
 )
 
-windows_binary(
-    name = "dll_binary",
-    arch = "x86_64",
-    arguments = ["--dll"],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["fixture/companion.dll"],
-)
-
-adapter_action(
-    name = "dll",
-    tool = "dll_binary",
-)
-
-windows_binary(
-    name = "response_binary",
-    arch = "x86_64",
-    arguments = ["@$(location fixture/response.txt)"],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["fixture/response.txt"],
-)
-
-adapter_action(
-    name = "response",
-    tool = "response_binary",
-)
-
-filegroup(
-    name = "two_files",
-    srcs = [
-        "data/a",
-        "data/b",
-    ],
-)
-
 alias_data(
     name = "aliases",
     src = "data/alias-only.txt",
-)
-
-windows_binary(
-    name = "argv_binary",
-    arch = "x86_64",
-    arguments = [
-        "@$(location data/file name café.txt)",
-        "@$(location data/cash$money.txt)",
-        "@$(location data/a}b.txt)",
-        "@$(location //:.bazelversion)",
-        "$$literal",
-        "$$(location data/a)",
-        "",
-        "$(locations two_files)",
-        "opaque/option:one/two",
-        "café",
-        "@$(runfile root-alias.txt)",
-        "@$(runfile _main/logical/data.txt)",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    data = [
-        "aliases",
-        "data/a tests/data/b",
-        "data/a}b.txt",
-        "data/cash$money.txt",
-        "data/file name café.txt",
-        "two_files",
-        "//:.bazelversion",
-    ],
-)
-
-adapter_action(
-    name = "argv_adapter",
-    tool = "argv_binary",
 )
 
 two_actions(
@@ -195,20 +126,17 @@ argv_record_test(
             "mapped external",
             "alias-only data",
         ]),
-        "argv_adapter": json.encode([
-            "space and Unicode data",
-            "literal dollar data",
-            "brace data",
-            "9.3.1",
+        "adapter_tool": json.encode([
+            "--config",
+            "payload-config.json",
+            "--",
+            "literal",
+            "space value",
+            "",
+            "café",
             "$literal",
             "$(location data/a)",
-            "",
-            {"suffix": "tests\\data\\a"},
-            {"suffix": "tests\\data\\b"},
             "opaque/option:one/two",
-            "café",
-            "alias-only data",
-            "alias-only data",
             "adapter-tool",
         ]),
     },
@@ -217,16 +145,23 @@ argv_record_test(
 windows_binary(
     name = "binary",
     arch = "x86_64",
-    arguments = [
-        "space value",
-        "",
-        "café",
-    ],
     binary = "fixture/fixture_x86_64.exe",
 )
 
 adapter_action(
     name = "adapter_tool",
+    arguments = [
+        "--config",
+        "payload-config.json",
+        "--",
+        "literal",
+        "space value",
+        "",
+        "café",
+        "$literal",
+        "$(location data/a)",
+        "opaque/option:one/two",
+    ],
     tool = "binary",
 )
 
@@ -251,37 +186,21 @@ param_action(
     binary = "fixture/fixture_x86_64.exe",
 )
 
-runtime_contract_test(
-    name = "adapter_cli_test",
-    timeout = "moderate",
-    adapter_cli_only = True,
-    payload = "fixture/fixture_x86_64.exe",
-    wrong_arch = "fixture/fixture_aarch64.exe",
-)
-
-windows_binary(
-    name = "additional_tool",
-    arch = "x86_64",
-    binary = "fixture/fixture_x86_64.exe",
-    data = [
-        "fixture/data café.txt",
-        "@platforms//:LICENSE",
-    ],
-)
-
 tools_action(
     name = "external_tools",
+    testonly = True,
     additional_tools = True,
     binary = "fixture/fixture_x86_64.exe",
-    extra = "additional_tool",
+    extra = "runfiles_binary",
     extra_data = "@platforms//:LICENSE",
 )
 
 tools_action(
     name = "additional_tools",
+    testonly = True,
     additional_tools = True,
     binary = "fixture/fixture_x86_64.exe",
-    extra = "additional_tool",
+    extra = "runfiles_binary",
 )
 
 tools_action(
@@ -292,30 +211,11 @@ tools_action(
 
 tools_action(
     name = "default_group_tools",
+    testonly = True,
     additional_tools = True,
     binary = "fixture/fixture_x86_64.exe",
     default_group = True,
-    extra = "additional_tool",
-)
-
-windows_binary(
-    name = "location_binary",
-    arch = "x86_64",
-    arguments = [
-        "@$(location generate)",
-        "@$(location @platforms//:LICENSE)",
-        "$(location generate)",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    data = [
-        "generate",
-        "@platforms//:LICENSE",
-    ],
-)
-
-adapter_action(
-    name = "location_tool",
-    tool = "location_binary",
+    extra = "runfiles_binary",
 )
 
 runtime_contract_test(

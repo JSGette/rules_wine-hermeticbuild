@@ -5,8 +5,6 @@ cd "$(dirname "$0")/.."
 for platform in \
   linux_x86_64_musl \
   linux_aarch64_musl \
-  windows_x86_64 \
-  windows_aarch64 \
   macos_x86_64 \
   macos_aarch64; do
   bazel build //wine/runtime:supervisor --platforms="@llvm//platforms:$platform" "$@"

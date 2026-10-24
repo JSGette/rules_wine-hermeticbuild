@@ -76,7 +76,6 @@ def _run(
     # unlike hashes, distinct output paths cannot alias this configuration.
     config = ctx.actions.declare_file(ctx.label.name + ".wine/" + outputs[0].path + ".json")
     ctx.actions.write(config, json.encode({
-        "backend": runner.backend,
         "arch": arch,
         "loader": runner.runtime.loader.path,
         "server": runner.runtime.server.path,

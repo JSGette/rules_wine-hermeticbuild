@@ -4,7 +4,6 @@ load(":consumer.bzl", "consumer")
 windows_binary(
     name = "adapter",
     arch = "x86_64",
-    arguments = ["adapter-consumer"],
     binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
 )
 

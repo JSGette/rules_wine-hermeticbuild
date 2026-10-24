@@ -105,125 +105,20 @@ collision(
     binary = "payload.exe",
 )
 
-filegroup(
-    name = "two",
-    srcs = [
-        "data/a",
-        "data/b",
-    ],
+symlink_data(
+    name = "alias_data",
+    src = "only_via_alias",
 )
 
-filegroup(name = "empty")
-
-alias(
-    name = "empty_alias",
-    actual = "empty",
+stub(
+    name = "payload_with_data",
+    data = ["alias_data"],
 )
 
 windows_binary(
-    name = "empty_location",
+    name = "data_adapter",
     arch = "x86_64",
-    arguments = ["$(locations :empty)"],
-    binary = "payload.exe",
-    data = [":empty"],
-)
-
-windows_binary(
-    name = "empty_alias_location",
-    arch = "x86_64",
-    arguments = ["$(locations :empty_alias)"],
-    binary = "payload.exe",
-    data = [":empty_alias"],
-)
-
-alias(
-    name = "adapter_alias",
-    actual = "root_location",
-)
-
-alias(
-    name = "space_alias",
-    actual = "data/file name",
-)
-
-alias(
-    name = "dollar_alias",
-    actual = "data/cash$money",
-)
-
-alias(
-    name = "quote_alias",
-    actual = "data/quote'file",
-)
-
-windows_binary(
-    name = "selected_aliases",
-    arch = "x86_64",
-    arguments = select({"//conditions:default": [
-        "$(location space_alias)",
-        "$(location dollar_alias)",
-        "$(location quote_alias)",
-    ]}),
-    binary = "payload.exe",
-    data = select({"//conditions:default": [
-        "dollar_alias",
-        "quote_alias",
-        "space_alias",
-    ]}),
-)
-
-windows_binary(
-    name = "executable_locations",
-    arch = "x86_64",
-    arguments = [
-        "$(location adapter_alias)",
-        "$(locations adapter_alias)",
-    ],
-    binary = "payload.exe",
-    data = ["adapter_alias"],
-)
-
-windows_binary(
-    name = "ambiguous",
-    arch = "x86_64",
-    arguments = ["$(locations :two)"],
-    binary = "payload.exe",
-    data = [
-        "data/a data/b",
-        ":two",
-    ],
-)
-
-windows_binary(
-    name = "root_location",
-    arch = "x86_64",
-    arguments = ["$(location :a)"],
-    binary = "payload.exe",
-    data = ["a"],
-)
-
-windows_binary(
-    name = "escaped",
-    arch = "x86_64",
-    arguments = ["$$(location :data/a)"],
-    binary = "payload.exe",
-    data = ["data/a"],
-)
-
-windows_binary(
-    name = "braces",
-    arch = "x86_64",
-    arguments = ["$(location :data/a}b)"],
-    binary = "payload.exe",
-    data = ["data/a}b"],
-)
-
-windows_binary(
-    name = "space_adapter",
-    arch = "x86_64",
-    arguments = ["$(location :data/file name)"],
-    binary = "payload.exe",
-    data = ["data/file name"],
+    binary = select({"//conditions:default": "payload_with_data"}),
 )
 
 windows_binary(
@@ -233,37 +128,16 @@ windows_binary(
     target_platform = "@rules_wine//platforms:windows_x86_64",
 )
 
-symlink_data(
-    name = "alias_data",
-    src = "only_via_alias",
+windows_binary(
+    name = "wrong_platform",
+    arch = "x86_64",
+    binary = "payload.exe",
+    target_platform = "audit_exec",
 )
 
 windows_binary(
-    name = "data_adapter",
+    name = "wrong_cpu",
     arch = "x86_64",
     binary = "payload.exe",
-    data = [":alias_data"],
-)
-
-windows_binary(
-    name = "embedded_plural",
-    arch = "x86_64",
-    arguments = ["prefix=$(locations :two)"],
-    binary = "payload.exe",
-    data = [":two"],
-)
-
-windows_binary(
-    name = "single_multiple",
-    arch = "x86_64",
-    arguments = ["$(location :two)"],
-    binary = "payload.exe",
-    data = [":two"],
-)
-
-windows_binary(
-    name = "undeclared",
-    arch = "x86_64",
-    arguments = ["$(location :a)"],
-    binary = "payload.exe",
+    target_platform = "@rules_wine//platforms:windows_aarch64",
 )

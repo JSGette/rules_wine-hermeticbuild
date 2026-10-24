@@ -56,16 +56,9 @@ std::string quote(const std::string &value) {
   }
   return result + '"';
 }
-std::string list(const std::vector<std::string> &values) {
-  std::string result = "[";
-  for (size_t i = 0; i < values.size(); ++i) {
-    result += (i ? "," : "") + quote(values[i]);
-  }
-  return result + "]";
-}
 struct Config {
   fs::path launcher, loader, server, payload, wrong_arch, companion;
-  bool adapter_cli = false, payload_layout = false;
+  bool payload_layout = false;
 };
 std::string field(const wine::Json &json, const std::string &name) {
   return json.at(name).as_string();
@@ -79,7 +72,6 @@ Config config(const std::string &data) {
   };
   Config c{locate("Launcher"), locate("Loader"),    locate("Server"),
            locate("Payload"),  locate("WrongArch"), locate("Companion")};
-  c.adapter_cli = value.at("AdapterCLI").as_bool();
   c.payload_layout = value.at("PayloadLayout").as_bool();
   return c;
 }
@@ -158,13 +150,10 @@ std::string output_arg(const fs::path &file) {
   return "{windows_path:" + quote(path_string(file)) + "}";
 }
 std::string runtime_config(const Config &c, const fs::path &payload,
-                           const std::vector<std::string> &args,
                            bool runfiles = false) {
-  return "{\"backend\":\"wine\",\"arch\":\"x86_64\",\"loader\":" +
-         quote(path_string(c.loader)) +
+  return "{\"arch\":\"x86_64\",\"loader\":" + quote(path_string(c.loader)) +
          ",\"server\":" + quote(path_string(c.server)) +
          ",\"payload\":" + quote(path_string(payload)) +
-         ",\"args\":" + list(args) +
          ",\"runfiles\":" + (runfiles ? "true" : "false") + "}";
 }
 fs::path scratch() {
@@ -179,28 +168,6 @@ fs::path scratch() {
   }
   return fs::u8path(chars.data());
 }
-void verify_adapter(const Config &c, const fs::path &dir) {
-  fs::path adapter = dir / "adapter";
-  fs::create_symlink(c.launcher, adapter);
-  write(path_string(adapter) + ".json", runtime_config(c, c.payload, {}));
-  const std::vector<std::vector<std::string>> prefixes{
-      {"--config", "payload-config.json"}, {"--", "literal"}};
-  for (size_t i = 0; i < prefixes.size(); ++i) {
-    fs::path output = dir / ("adapter-" + std::to_string(i) + ".json");
-    auto args = prefixes[i];
-    args.insert(args.end(), {"--output", output_arg(output)});
-    Process process =
-        launch(adapter, args, dir / ("adapter-" + std::to_string(i) + ".log"));
-    require(wait(process) == 0, "adapter CLI: " + read(process.log));
-    wine::Json result = record(output);
-    const auto &actual = result.at("args").elements;
-    for (size_t j = 0; j < prefixes[i].size(); ++j) {
-      require(actual.size() > j && actual[j].as_string() == prefixes[i][j],
-              "adapter consumed payload args");
-    }
-  }
-  std::cout << "PASS: adapter preserves leading --config and --\n";
-}
 void verify_layout(const Config &c, const fs::path &dir) {
   for (auto name : {"source", "generated", "logical"}) {
     fs::create_directory(dir / name);
@@ -212,9 +179,10 @@ void verify_layout(const Config &c, const fs::path &dir) {
                      dir / "logical/companion.dll");
   fs::path output = dir / "layout.json";
   fs::path config_file = dir / "layout.config.json";
-  write(config_file, runtime_config(c, dir / "logical/app.exe",
-                                    {"--dll", "--output", output_arg(output)}));
-  Process process = launch(c.launcher, {"--config", path_string(config_file)},
+  write(config_file, runtime_config(c, dir / "logical/app.exe"));
+  Process process = launch(c.launcher,
+                           {"--config", path_string(config_file), "--", "--dll",
+                            "--output", output_arg(output)},
                            dir / "layout.log");
   require(wait(process) == 0,
           "logical payload/DLL adjacency: " + read(process.log));
@@ -222,11 +190,11 @@ void verify_layout(const Config &c, const fs::path &dir) {
           "logical payload child did not execute");
   write(dir / "MANIFEST",
         "logical/app.exe " + path_string(dir / "source/app.exe") + "\n");
-  write(config_file,
-        runtime_config(c, "logical/app.exe",
-                       {"--dll", "--output", output_arg(output)}, true));
+  write(config_file, runtime_config(c, "logical/app.exe", true));
   fs::remove(output);
-  process = launch(c.launcher, {"--config", path_string(config_file)},
+  process = launch(c.launcher,
+                   {"--config", path_string(config_file), "--", "--dll",
+                    "--output", output_arg(output)},
                    dir / "runfiles-layout.log",
                    {{"RUNFILES_DIR", path_string(dir)},
                     {"RUNFILES_MANIFEST_FILE", path_string(dir / "MANIFEST")}});
@@ -266,8 +234,11 @@ void verify_lifecycle(const Config &c, const fs::path &dir) {
                    const std::vector<std::string> &args) {
     fs::path config_file =
         dir / ("invocation-" + std::to_string(++count) + ".json");
-    write(config_file, runtime_config(c, payload, args));
-    return launch(c.launcher, {"--config", path_string(config_file)},
+    write(config_file, runtime_config(c, payload));
+    std::vector<std::string> invocation{"--config", path_string(config_file),
+                                        "--"};
+    invocation.insert(invocation.end(), args.begin(), args.end());
+    return launch(c.launcher, invocation,
                   dir / ("invocation-" + std::to_string(count) + ".log"));
   };
   fs::path first_out = dir / "first.json", second_out = dir / "second.json";
@@ -315,9 +286,10 @@ void verify_lifecycle(const Config &c, const fs::path &dir) {
   write(wrong_loader_file, wrong_loader_bytes);
   wrong_loader.loader = wrong_loader_file;
   fs::path config_file = dir / "wrong-loader.json";
-  write(config_file, runtime_config(wrong_loader, c.payload, {}));
-  Process mismatch = launch(c.launcher, {"--config", path_string(config_file)},
-                            dir / "wrong-loader.log");
+  write(config_file, runtime_config(wrong_loader, c.payload));
+  Process mismatch =
+      launch(c.launcher, {"--config", path_string(config_file), "--"},
+             dir / "wrong-loader.log");
   require(wait(mismatch) == 125 &&
               read(mismatch.log).find("Wine executable CPU does not match") !=
                   std::string::npos,
@@ -335,9 +307,7 @@ int main(int, char **argv) {
     Config c = config(read(std::string(argv[0]) + ".json"));
     fs::path dir = scratch();
     try {
-      if (c.adapter_cli) {
-        verify_adapter(c, dir);
-      } else if (c.payload_layout) {
+      if (c.payload_layout) {
         verify_layout(c, dir);
       } else {
         verify_lifecycle(c, dir);

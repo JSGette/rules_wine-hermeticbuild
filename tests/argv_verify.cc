@@ -44,17 +44,7 @@ int main(int argc, char **argv) {
             " != " + std::to_string(expected.elements.size()));
       }
       for (size_t i = 0; i < actual.size(); ++i) {
-        const auto &value = expected.elements[i];
-        bool matches = false;
-        if (value.kind == wine::Json::string) {
-          matches = actual[i] == value.as_string();
-        } else {
-          auto suffix = value.at("suffix").as_string();
-          matches = actual[i].size() >= suffix.size() &&
-                    actual[i].compare(actual[i].size() - suffix.size(),
-                                      suffix.size(), suffix) == 0;
-        }
-        if (!matches) {
+        if (actual[i] != expected.elements[i].as_string()) {
           throw std::runtime_error(file + ": unexpected argv[" +
                                    std::to_string(i) + "] = " + actual[i]);
         }

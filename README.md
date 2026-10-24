@@ -11,7 +11,7 @@ Bazel 8.5.0 and 9.3.1 are exercised. Initial runtime status:
 | Linux x86_64 / x86_64 | Pinned Wine 11.0 default | Remote actions, adapters and lifecycle pass |
 | Linux ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled; execution untested |
 | Windows x86_64 / x86_64 | No Wine required | Direct-action graph verified; execution untested |
-| Windows ARM64 / ARM64 | No Wine required | Supervisor cross-compiled; direct-action graph verified; execution untested |
+| Windows ARM64 / ARM64 | No Wine required | Direct-action graph verified; execution untested |
 | macOS Intel / x86_64 | User-supplied native archive | Supervisor cross-compiled with Apple SDK 26.5 override; execution untested |
 | macOS ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled with Apple SDK 26.5 override; experimental runtime limitation below |
 
@@ -35,7 +35,9 @@ Register execution platforms appropriate to your local or remote workers. The
 ruleset does not infer remote worker capabilities from the machine running Bazel.
 The supervisor is a C++ source target built with the execution-platform compiler.
 This module depends on `rules_cc` and `@llvm` and registers `@llvm` C++ toolchains;
-downstream builds compile the supervisor on demand.
+downstream Wine builds compile the supervisor on demand. `hermetic_launcher`
+provides the small runfiles bootstrap from published binaries; consumers do not
+need a Rust compiler.
 `@llvm` 0.7.6 uses Bazel APIs unavailable in Bazel 7.7, so this source-built
 version requires Bazel 8.5 or newer.
 Native Windows registrations have no Wine archive dependency. Archives are fetched
@@ -57,57 +59,43 @@ windows_binary(
     name = "generator",
     binary = "generator.exe",
     arch = "x86_64",
-    arguments = ["space value", "", "café"],
-    data = ["companion.dll"],
 )
 ```
 
-`windows_binary` adapts a Windows executable for `bazel run` or use as a normal
-`cfg = "exec"` action tool. Rules that invoke Windows programs directly use
-`windows_actions.run`, described below. There is no public output-generation rule
-or test adapter.
+`windows_binary` exposes a Windows executable through Wine on same-CPU Linux or
+macOS. Use it with `bazel run //:generator -- ...` or as an executable dependency
+of a generic rule. It is currently scoped to non-Windows execution; use
+`windows_actions.run` for actions that also need native Windows execution.
 
-`binary` accepts one prebuilt PE file or an executable target. No transition is
-required for prebuilts. For source-built inputs, optionally set
-`target_platform = "//platforms:windows_x86_64"` to transition only the payload
-and its `data`; the platform must declare Windows and the same CPU as `arch`.
-Your own compiler/toolchain must support that configuration.
+`binary` accepts one prebuilt PE file or an executable target. For source-built
+inputs, optionally set `target_platform = "//platforms:windows_x86_64"` to
+transition only the payload and its dependencies. That platform must declare
+Windows and the same CPU as `arch`; your compiler/toolchain must support it.
 
-`windows_binary` follows its own executable target platform: the host by default,
-the consuming executor when used as a `cfg = "exec"` tool. Remote execution
-platform registration alone cannot produce a foreign launcher for local
-`bazel run`. Explicitly cross-configuring the adapter itself follows normal Bazel
-executable semantics; use `target_platform` to cross-configure just its payload.
+The adapter follows its own target platform: the host by default, or the
+consumer's selected executor when its attribute uses `cfg = "exec"`. For a named
+execution group use `cfg = config.exec("group")`. The consuming action must run
+on that same platform. Registering remote platforms alone does not make a foreign
+adapter executable locally with `bazel run`.
 
-`arguments` preserves list elements, including empty strings and spaces. `env`,
-transitive runfiles and `data` are preserved. Companion files retain their existing
-relative layout; DLLs requiring executable adjacency must already be adjacent in
-that layout. Adding an unrelated file to `data` does not move it beside the
-executable. Arrange generated executable/DLL outputs in the same directory.
+Callers provide invocation arguments and environment. There are no wrapper
+`arguments`, `env`, or `data` attributes and no location-expression expansion.
+The underlying executable owns its runfiles. Its `RunEnvironmentInfo` is forwarded
+for `bazel run`; ordinary action invocations still use the action's environment.
+Default command-line arguments of the underlying target are not inherited.
 
-Adapter arguments accept `$(location label)` for one declared payload/data file
-and `$(locations label)` for multiple files. A standalone plural expression expands
-to separate argv elements; an embedded plural must identify one file.
-`$(runfile logical/key)` names declared runfiles, including workspace symlinks,
-root symlinks and empty entries. The adapter preserves the complete Bazel runfiles
-object; locations use logical runfiles keys and convert to Windows paths at runtime.
-`$$` escapes a literal dollar. Expansion happens once, so dollars, spaces and braces
-inside filenames remain literal. Action output/source variables and arbitrary Make
-variables are unsupported.
+Companion files retain their existing runfiles layout. DLLs that require
+executable adjacency must already be adjacent in that layout; arrange generated
+executable/DLL outputs in the same directory.
+For prebuilts with companion files, expose an executable target owning those
+runfiles instead of passing a bare PE file.
 
-Locations of executable targets name their executable; other targets expose
-their files in sorted path order. Location targets must produce at least one file.
-Aliases and configurable arguments are supported on Bazel 8.5 and 9.3. Bazel hides
-original alias labels from Starlark; a small compatibility bridge compares complete
-native expansions against typed File sets, with no shell parsing. If an alias
-ambiguously identifies both an executable and a different output set, reference
-the actual canonical target. Standard Bazel runfiles carry repository mappings.
+`hermetic_launcher` resolves the supervisor and configuration through runfiles,
+then forwards invocation arguments. The Linux/macOS supervisor uses `rules_cc`'s
+runfiles library and forwards its discovered runfiles environment, converting
+paths for Wine. Wrapped programs can therefore use standard runfiles libraries
+when launched as action tools. The ruleset does not create replacement manifests.
 Response-file contents and encoding belong to the payload.
-
-The supervisor uses `rules_cc`'s runfiles library for discovery and manifest
-parsing, and forwards its runfiles environment to the payload. Wine converts those
-environment paths to Windows paths, allowing wrapped programs to use their own
-standard runfiles libraries when launched as action tools.
 
 ## Other rule authors
 
@@ -214,11 +202,11 @@ is assumed.
 For a complete override, define `windows_runner_toolchain` from
 `@rules_wine//wine:toolchain.bzl`. A Wine implementation needs `arch`, `backend`,
 `launcher`, `loader`, `server`, `files`, `identity`, `requirements`, and `env`; it
-can serve runner and binary adapter registrations. Native Windows
-uses two implementations: a direct action runner without `launcher` or Wine files,
-and an adapter with the source-built launcher but no Wine files. Register each
-against `runner_<arch>_toolchain_type` or `adapter_<arch>_toolchain_type` as
-appropriate. Both have executor OS/CPU constraints. Runners impose no final-output
+can serve runner and binary adapter registrations. Native Windows uses a direct
+action runner without `launcher` or Wine files.
+Wine implementations can register against `runner_<arch>_toolchain_type` and
+`adapter_<arch>_toolchain_type`; native implementations register only as runners.
+Both have executor OS/CPU constraints. Runners impose no final-output
 constraints; binary adapters additionally have matching target OS/CPU constraints.
 `WindowsRunnerInfo` and `WineRuntimeInfo` expose
 the advanced contract. `launcher` is an executable dependency in execution
@@ -237,19 +225,19 @@ removes scratch state. Cleanup errors are reported without replacing the payload
 result. Exit statuses 0–255 pass through on Unix; signals use 128+signal. Wine's
 CLI can truncate full Windows statuses before the Unix supervisor receives them;
 lossless full Windows exit reporting is not supplied. Native Windows actions
-retain the native process interface; native adapters retain the native status.
+retain the native process interface.
 
 Prefix isolation is not a security sandbox. No shared/prepared prefixes,
 winetricks, machine Wine, shell utilities or Python are in the production runtime.
 Stronger filesystem/process/network isolation, immutable prefix seeds, GUI/.NET,
-coverage and workers remain future work. Windows adapter descendant cancellation
-has not been runtime-verified. See [testing and maintenance](tests/README.md) for
-the verification commands and platform gaps.
+coverage and workers remain future work. See [testing and maintenance](tests/README.md)
+for the verification commands and platform gaps.
 
 The supervisor is compiled from source for the selected execution platform. No
 supervisor binary is checked in. `tests/compile_platforms.sh --config=remote` checks
-the six cross-compilation targets; `tests/update_fixtures.sh --config=remote`
-rebuilds development-only fixtures, which are not consumer dependencies.
+the four Linux/macOS cross-compilation targets;
+`tests/update_fixtures.sh --config=remote` rebuilds development-only fixtures,
+which are not consumer dependencies.
 
 macOS ARM64 requires a compatible native Wine archive. The experimental build
 evaluated so far could run its bundled programs but failed independent ARM64

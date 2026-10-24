@@ -37,11 +37,10 @@ payload_platform = rule(
 
 def payload_attrs():
     return {
-        "binary": attr.label(allow_files = True, mandatory = True, cfg = payload_transition),
-        "data": attr.label_list(allow_files = True, cfg = payload_transition),
+        "binary": attr.label(executable = True, allow_files = True, mandatory = True, cfg = payload_transition),
         "target_platform": attr.label(
             providers = [platform_common.PlatformInfo],
-            doc = "Optional Windows platform for source compilation.",
+            doc = "Optional Windows platform for payload compilation.",
         ),
         "_payload_platform": attr.label(default = Label("//wine/private:payload_platform"), cfg = payload_transition),
         "_allowlist_function_transition": attr.label(
@@ -50,7 +49,7 @@ def payload_attrs():
     }
 
 def payload(ctx, arch):
-    """Resolve a PE executable and merge its complete payload/data runfiles.
+    """Resolve a PE executable and preserve its runfiles.
 
     Args:
         ctx: Consuming rule context with payload_attrs.
@@ -70,20 +69,11 @@ def payload(ctx, arch):
             ))
     info = target[DefaultInfo]
     executable = info.files_to_run.executable
-    if not executable:
-        files = info.files.to_list()
-        if len(files) != 1:
-            fail("binary must be an executable target or exactly one prebuilt PE file")
-        executable = files[0]
-    infos = [info] + [target[DefaultInfo] for target in ctx.attr.data]
     runfiles = ctx.runfiles(
-        transitive_files = depset([executable], transitive = [item.files for item in infos]),
-    ).merge_all([
-        files
-        for item in infos
-        for files in [item.default_runfiles, item.data_runfiles]
-    ])
+        transitive_files = depset([executable], transitive = [info.files]),
+    ).merge_all([info.default_runfiles, info.data_runfiles])
     return struct(
         file = executable,
         runfiles = runfiles,
+        run_environment = target[RunEnvironmentInfo] if RunEnvironmentInfo in target else None,
     )

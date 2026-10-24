@@ -13,8 +13,8 @@ def _stub_impl(ctx):
     return [DefaultInfo(
         executable = out,
         files = depset(files),
-        runfiles = ctx.runfiles(files = ctx.files.data + files),
-    )]
+        runfiles = ctx.runfiles(files = ctx.files.data + files).merge_all([target[DefaultInfo].default_runfiles for target in ctx.attr.data]),
+    ), RunEnvironmentInfo(environment = {"FIXTURE_VALUE": "binary-owned environment"})]
 
 stub = rule(
     implementation = _stub_impl,
