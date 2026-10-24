@@ -12,8 +12,8 @@ Bazel 8.5.0 and 9.3.1 are exercised. Initial runtime status:
 | Linux ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled; execution untested |
 | Windows x86_64 / x86_64 | No Wine required | Direct-action graph verified; execution untested |
 | Windows ARM64 / ARM64 | No Wine required | Supervisor cross-compiled; direct-action graph verified; execution untested |
-| macOS Intel / x86_64 | User-supplied native archive | Supervisor cross-compiled with local SDK; execution untested |
-| macOS ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled with local SDK; experimental runtime limitation below |
+| macOS Intel / x86_64 | User-supplied native archive | Supervisor cross-compiled with Apple SDK 26.5 override; execution untested |
+| macOS ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled with Apple SDK 26.5 override; experimental runtime limitation below |
 
 No Rosetta, QEMU, Box64, FEX, x86 payloads, or cross-CPU fallback. The default Wine
 archive contains extra upstream components, but these rules accept only x86_64
@@ -104,11 +104,10 @@ ambiguously identifies both an executable and a different output set, reference
 the actual canonical target. Standard Bazel runfiles carry repository mappings.
 Response-file contents and encoding belong to the payload.
 
-The adapter resolves its own runfiles but does not yet export discovered runfiles
-environment variables to the payload. Programs relying on a runfiles library's
-automatic discovery can fail when used as action tools. Direct invocation through
-`windows_actions.run` with a `FilesToRunProvider` is verified; see the
-[adapter limitation](tests/README.md#verification-boundaries).
+The supervisor uses `rules_cc`'s runfiles library for discovery and manifest
+parsing, and forwards its runfiles environment to the payload. Wine converts those
+environment paths to Windows paths, allowing wrapped programs to use their own
+standard runfiles libraries when launched as action tools.
 
 ## Other rule authors
 

@@ -79,12 +79,10 @@ companion DLL. Lifecycle and argv verifiers build from source in the actual test
 execution configuration; no verifier binary is checked in. Keep fixture sources
 and checked-in Windows test binaries in sync.
 
-The adapter currently also handles environment overrides, Windows path markers,
-and arbitrary configured argument lists. `hermetic_launcher` v0.0.16 handles
-runfiles entrypoints but has no equivalent environment/path API and limits embedded
-arguments to ten entries of 256 bytes. Adding it around the supervisor would not
-remove those responsibilities. Revisit reuse when it can replace that machinery
-without another wrapper or a narrower public contract.
+The supervisor uses `rules_cc`'s runfiles library for discovery and manifest
+parsing. Its `EnvVars()` are forwarded to the payload, with Wine path conversion.
+Environment overrides, Windows path markers, configured arguments and Wine lifecycle
+management remain supervisor responsibilities.
 
 ## Verification boundaries
 
@@ -97,18 +95,23 @@ Native Windows, Linux ARM64 and Intel macOS execution remain untested. Windows
 action graphs verify selection and inputs, not runtime behavior. Native local Linux
 sandbox execution remains unverified.
 
-Moving the C++ runfiles fixture behind `windows_binary` exposed an adapter gap:
-the supervisor discovers the adapter's runfiles but does not export that discovery
-to its payload. The payload's C++ runfiles library then fails to find runfiles when
-invoked as an action tool without runfiles environment variables. Logical argument
-locations still work. The direct `FilesToRunProvider` action check passes; adapter
-environment forwarding needs a separate fix before claiming equivalent discovery.
+The source-built C++ runfiles fixture runs through both a direct
+`FilesToRunProvider` action and `windows_binary` as an action tool. Both verify
+external-repository mapping and alias-only data. The adapter case fails against
+`4ff2f7e` because its supervisor did not export the discovered runfiles environment.
+The layout test also exercises a manifest whose payload entry points outside the
+runfiles directory, verifying that adjacent DLL lookup retains the logical layout.
 
-The pinned `@llvm` macOS SDK URL returned 403
-during the source-build check. Both macOS architectures compiled using a temporary
-archive of the locally installed SDK; downstream macOS builds need a reachable SDK
-archive supplied through `@llvm`'s `osx.from_archive` extension until its default
-URL works again.
+The pinned `@llvm` 0.7.6 macOS SDK URL returns 403. Both macOS supervisor
+architectures were cross-compiled with a temporary root-module `osx.from_archive`
+override using [Apple's SDK 26.5 package](https://swcdn.apple.com/content/downloads/33/19/140-17812-A_21ZLMMLY4E/zu3xwktttpoe71qiawhzgzvqss6rovawsa/CLTools_macOSNMOS_SDK.pkg).
+The package was found through `hermetic-llvm`'s `tools/update_osx_sdk.py` catalog
+parser, downloaded with HTTP 200, and its embedded SDK version and SHA-256 verified:
+`debe353b27a13cd678b26ab216a040acf07b62c0639d8ac522df4ca07d121eb2`.
+For the override, set `type = "pkg"` and
+`strip_prefix = "Payload/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"`.
+This verification does not update the pinned LLVM dependency's default SDK URL;
+downstream macOS builds need the override until that dependency is updated.
 
 An experimental native ARM64 macOS build
 ([DiagBridge 0.2.5](https://github.com/citi94/diagbridge/releases/tag/v0.2.5)) ran its

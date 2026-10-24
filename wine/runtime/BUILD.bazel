@@ -23,5 +23,8 @@ cc_binary(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = [":json"],
+    deps = [
+        ":json",
+        "@rules_cc//cc/runfiles",
+    ],
 )

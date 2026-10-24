@@ -22,6 +22,24 @@ adapter_action = rule(
     exec_compatible_with = ["@platforms//os:linux", "@platforms//cpu:x86_64"],
 )
 
+def _runfiles_adapter_impl(ctx):
+    output = ctx.actions.declare_file(ctx.label.name + ".json")
+    ctx.actions.run(
+        executable = ctx.attr.tool[DefaultInfo].files_to_run,
+        arguments = ["{windows_path:" + json.encode(output.path) + "}"],
+        outputs = [output],
+        mnemonic = "RunfilesAdapterFixture",
+    )
+    return [DefaultInfo(files = depset([output]))]
+
+runfiles_adapter_action = rule(
+    implementation = _runfiles_adapter_impl,
+    attrs = {
+        "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
+    },
+    exec_compatible_with = ["@platforms//os:linux", "@platforms//cpu:x86_64"],
+)
+
 def _runfiles_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     windows_actions.run(

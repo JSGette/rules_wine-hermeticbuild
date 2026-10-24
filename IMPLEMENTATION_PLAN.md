@@ -15,9 +15,10 @@ The removal eliminates the custom action runfiles manifest, source/output argume
 expansion, and separate test-adapter toolchains. `windows_binary` already stores
 logical runfiles keys in its configuration, so it does not need configuration-prefix
 rewriting. Its action callers still need to preserve typed paths in runtime arguments.
-An independent adapter gap was exposed during migration: discovered runfiles
-environment variables are not forwarded to payloads using standard runfiles
-libraries. Record and fix that separately; path mapping does not solve discovery.
+The independent adapter discovery gap is addressed by using the `rules_cc`
+runfiles library and forwarding its `EnvVars()` to the payload. A source-built
+Windows program verifies repository mapping and alias-only data through the
+adapter. This is independent of path mapping.
 
 Two boundaries remain in `windows_actions`:
 
@@ -270,8 +271,9 @@ out of the production execution path. `@llvm` and `rules_cc` are production
 dependencies; downstream adapter/Wine builds compile the supervisor on demand.
 Native build actions execute their PE directly and need no supervisor.
 
-The current adapter retains its own entrypoint/runfiles logic because
-hermetic_launcher does not cover its environment and path-conversion contract.
+The adapter uses `rules_cc` for runfiles discovery, manifest parsing and environment
+forwarding. Its own entrypoint retains the Wine environment and path-conversion
+contract.
 
 For each invocation:
 

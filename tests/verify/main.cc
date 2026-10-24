@@ -88,7 +88,8 @@ struct Process {
   fs::path log;
 };
 Process launch(const fs::path &program, const std::vector<std::string> &args,
-               const fs::path &log) {
+               const fs::path &log,
+               const std::map<std::string, std::string> &env = {}) {
   pid_t pid = fork();
   if (pid == 0) {
     FILE *output = std::fopen(log.c_str(), "wb");
@@ -99,6 +100,9 @@ Process launch(const fs::path &program, const std::vector<std::string> &args,
     }
     setenv("XML_OUTPUT_FILE", "", 1);
     setenv("TEST_SHARD_STATUS_FILE", "", 1);
+    for (const auto &[key, value] : env) {
+      setenv(key.c_str(), value.c_str(), 1);
+    }
     std::vector<std::string> strings{path_string(program)};
     strings.insert(strings.end(), args.begin(), args.end());
     std::vector<char *> argv;
@@ -154,12 +158,14 @@ std::string output_arg(const fs::path &file) {
   return "{windows_path:" + quote(path_string(file)) + "}";
 }
 std::string runtime_config(const Config &c, const fs::path &payload,
-                           const std::vector<std::string> &args) {
+                           const std::vector<std::string> &args,
+                           bool runfiles = false) {
   return "{\"backend\":\"wine\",\"arch\":\"x86_64\",\"loader\":" +
          quote(path_string(c.loader)) +
          ",\"server\":" + quote(path_string(c.server)) +
          ",\"payload\":" + quote(path_string(payload)) +
-         ",\"args\":" + list(args) + "}";
+         ",\"args\":" + list(args) +
+         ",\"runfiles\":" + (runfiles ? "true" : "false") + "}";
 }
 fs::path scratch() {
   std::string pattern =
@@ -214,6 +220,20 @@ void verify_layout(const Config &c, const fs::path &dir) {
           "logical payload/DLL adjacency: " + read(process.log));
   require(field(record(output), "child") == "child-ok",
           "logical payload child did not execute");
+  write(dir / "MANIFEST",
+        "logical/app.exe " + path_string(dir / "source/app.exe") + "\n");
+  write(config_file,
+        runtime_config(c, "logical/app.exe",
+                       {"--dll", "--output", output_arg(output)}, true));
+  fs::remove(output);
+  process = launch(c.launcher, {"--config", path_string(config_file)},
+                   dir / "runfiles-layout.log",
+                   {{"RUNFILES_DIR", path_string(dir)},
+                    {"RUNFILES_MANIFEST_FILE", path_string(dir / "MANIFEST")}});
+  require(wait(process) == 0,
+          "runfiles payload/DLL adjacency: " + read(process.log));
+  require(field(record(output), "child") == "child-ok",
+          "runfiles payload child did not execute");
   std::cout << "PASS: symlinked payload loads adjacent DLL\n";
 }
 bool owned_descendant(const std::string &prefix) {

@@ -1,6 +1,7 @@
 // Executor-native adapter for Windows payloads, built from source in the
 // selected execution configuration.
 #include "json.h"
+#include "rules_cc/cc/runfiles/runfiles.h"
 
 #include <algorithm>
 #include <array>
@@ -14,9 +15,11 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -34,6 +37,7 @@
 
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
+using rules_cc::cc::runfiles::Runfiles;
 
 namespace {
 struct Config {
@@ -111,84 +115,56 @@ Config configuration(const std::string &data) {
   return c;
 }
 
-std::string unescape(const std::string &value) {
-  std::string result;
-  for (size_t i = 0; i < value.size(); ++i) {
-    if (value[i] != '\\' || i + 1 == value.size()) {
-      result += value[i];
-      continue;
-    }
-    switch (value[++i]) {
-    case 's':
-      result += ' ';
-      break;
-    case 'n':
-      result += '\n';
-      break;
-    case 'b':
-      result += '\\';
-      break;
-    default:
-      result += '\\';
-      result += value[i];
-      break;
-    }
-  }
-  return result;
-}
-std::string runfile(const std::string &logical, const std::string &self,
-                    std::string manifest = {}) {
-  if (path(logical).is_absolute()) {
-    return logical;
-  }
-  if (manifest.empty()) {
-    for (const auto &dir : {getenv_string("RUNFILES_DIR"),
-                            getenv_string("TEST_SRCDIR"), self + ".runfiles"}) {
-      if (dir.empty()) {
-        continue;
-      }
-      fs::path candidate = path(dir) / path(logical);
-      if (fs::exists(candidate)) {
-        return absolute_path(candidate);
+// Most build actions use only execroot paths. Open runfiles lazily when an
+// adapter or explicit runfile argument actually needs them.
+class RunfilesContext {
+public:
+  RunfilesContext(
+      std::string self,
+      std::string manifest = getenv_string("RUNFILES_MANIFEST_FILE"),
+      std::string directory = getenv_string("RUNFILES_DIR"))
+      : self_(std::move(self)), manifest_(std::move(manifest)),
+        directory_(std::move(directory)) {}
+
+  const Runfiles &get() {
+    if (!runfiles_) {
+      std::string error;
+      // Configuration keys are already canonical runfiles paths, rather than
+      // apparent repository names relative to the supervisor's repository.
+      runfiles_.reset(
+          Runfiles::Create(self_, manifest_, directory_, "", &error));
+      if (!runfiles_) {
+        throw std::runtime_error(error);
       }
     }
-    manifest = getenv_string("RUNFILES_MANIFEST_FILE");
-    if (manifest.empty()) {
-      manifest = self + ".runfiles_manifest";
-    }
+    return *runfiles_;
   }
-  std::ifstream in(path(manifest));
-  std::string line, best_key, best_value;
-  while (std::getline(in, line)) {
-    bool escaped = !line.empty() && line[0] == ' ';
-    if (escaped) {
-      line.erase(0, 1);
+
+  std::string resolve(const std::string &logical,
+                      bool preserve_layout = false) {
+    if (preserve_layout) {
+      // DLL lookup follows the executable's directory. Prefer its runfiles
+      // location to a manifest entry that points outside that layout.
+      for (const auto &[key, value] : get().EnvVars()) {
+        if (key == "RUNFILES_DIR" && !value.empty()) {
+          auto candidate = path(value) / path(logical);
+          if (fs::exists(candidate)) {
+            return absolute_path(candidate);
+          }
+        }
+      }
     }
-    size_t split = line.find(' ');
-    std::string key = line.substr(0, split);
-    std::string value =
-        split == std::string::npos ? key : line.substr(split + 1);
-    if (escaped) {
-      key = unescape(key);
-      value = unescape(value);
+    auto resolved = get().Rlocation(logical);
+    if (resolved.empty()) {
+      throw std::runtime_error("runfile \"" + logical + "\" not found");
     }
-    if (key == logical) {
-      return absolute_path(path(value));
-    }
-    if (!key.empty() && logical.size() > key.size() &&
-        logical.compare(0, key.size(), key) == 0 &&
-        logical[key.size()] == '/' && key.size() > best_key.size()) {
-      best_key = key;
-      best_value = value;
-    }
+    return absolute_path(path(resolved));
   }
-  if (!best_key.empty()) {
-    return absolute_path(path(best_value) /
-                         path(logical.substr(best_key.size() + 1)));
-  }
-  throw std::runtime_error("runfile \"" + logical +
-                           "\" not found (RUNFILES_DIR/manifest)");
-}
+
+private:
+  std::string self_, manifest_, directory_;
+  std::unique_ptr<Runfiles> runfiles_;
+};
 
 std::string windows_path(const std::string &value) {
 #ifdef _WIN32
@@ -199,8 +175,7 @@ std::string windows_path(const std::string &value) {
   return result;
 #endif
 }
-std::string convert(std::string value, const std::string &self,
-                    const std::string &manifest = {}) {
+std::string convert(std::string value, RunfilesContext &runfiles) {
   size_t start = 0;
   while (true) {
     size_t direct = value.find("{windows_path:", start);
@@ -224,7 +199,7 @@ std::string convert(std::string value, const std::string &self,
       throw std::runtime_error("unterminated Windows path interpolation");
     }
     if (std::strcmp(marker, "{windows_runfile:") == 0) {
-      item = runfile(item, self, manifest);
+      item = runfiles.resolve(item);
     }
     std::string converted = windows_path(item);
     value.replace(start, end + 1 - start, converted);
@@ -497,12 +472,13 @@ int invoke(Config c, std::vector<std::string> extra, const std::string &self) {
   if (cpu != c.arch) {
     throw std::runtime_error("CPU translation is unsupported");
   }
+  RunfilesContext runfiles(self);
   auto resolve = [&](const std::string &name, bool canonicalize) {
     if (name.empty()) {
       return name;
     }
-    fs::path result =
-        path(c.runfiles ? runfile(name, self) : absolute_path(path(name)));
+    fs::path result = path(c.runfiles ? runfiles.resolve(name, !canonicalize)
+                                      : absolute_path(path(name)));
     // Keep the payload's logical runfiles path so adjacent DLL lookup works.
     if (canonicalize) {
       result = fs::canonical(result);
@@ -515,13 +491,24 @@ int invoke(Config c, std::vector<std::string> extra, const std::string &self) {
   validate_pe(c.payload, c.arch);
   c.args.insert(c.args.end(), extra.begin(), extra.end());
   auto manifest_entry = c.env.find("RUNFILES_MANIFEST_FILE");
-  const std::string payload_manifest =
-      manifest_entry == c.env.end() ? "" : manifest_entry->second;
+  auto directory_entry = c.env.find("RUNFILES_DIR");
+  // A payload may explicitly supply a different runfiles environment.
+  RunfilesContext payload_runfiles(
+      self,
+      manifest_entry == c.env.end() ? getenv_string("RUNFILES_MANIFEST_FILE")
+                                    : manifest_entry->second,
+      directory_entry == c.env.end() ? getenv_string("RUNFILES_DIR")
+                                     : directory_entry->second);
   for (auto &arg : c.args) {
-    arg = convert(arg, self, payload_manifest);
+    arg = convert(arg, payload_runfiles);
   }
   for (auto &[key, value] : c.env) {
-    value = convert(value, self, payload_manifest);
+    value = convert(value, payload_runfiles);
+  }
+  if (c.runfiles) {
+    for (const auto &[key, value] : runfiles.get().EnvVars()) {
+      c.env.try_emplace(key, value);
+    }
   }
   std::signal(SIGTERM, signal_handler);
   std::signal(SIGINT, signal_handler);
@@ -606,7 +593,7 @@ int invoke(Config c, std::vector<std::string> extra, const std::string &self) {
         "TEST_UNDECLARED_OUTPUTS_MANIFEST",
         "TEST_UNDECLARED_OUTPUTS_ANNOTATIONS_DIR", "XML_OUTPUT_FILE",
         "TEST_SHARD_STATUS_FILE", "TEST_SRCDIR", "RUNFILES_DIR",
-        "RUNFILES_MANIFEST_FILE"}) {
+        "RUNFILES_MANIFEST_FILE", "JAVA_RUNFILES"}) {
     std::string value = c.env.count(key) ? c.env[key] : getenv_string(key);
     if (!value.empty()) {
       c.env[key] = windows_path(value);
