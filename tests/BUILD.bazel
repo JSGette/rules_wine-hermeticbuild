@@ -88,7 +88,6 @@ runfiles_action(
 windows_binary(
     name = "runfiles_binary",
     testonly = True,
-    arch = "x86_64",
     binary = "runfiles_fixture",
     target_platform = "@llvm//platforms:windows_x86_64",
 )
@@ -144,8 +143,8 @@ argv_record_test(
 
 windows_binary(
     name = "binary",
-    arch = "x86_64",
     binary = "fixture/fixture_x86_64.exe",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 adapter_action(

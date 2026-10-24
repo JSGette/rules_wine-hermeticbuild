@@ -63,6 +63,9 @@ no-tag setup fails against `d6b9e95`, which required a `.toolchains(...)` call.
 The Starlark script checks the Aa/BB action configuration collision (failing on
 `0f17c44`), aliases under `select()`, executable sidecar outputs,
 an external executable's data and expected payload-platform analysis errors.
+It also inspects the same adapter under x86_64 and ARM64 target platforms,
+checking the selected CPU and rejecting incompatible fixed prebuilts. ARM64
+checks inspect action graphs; they do not execute the synthetic runtime.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
 `USE_BAZEL_VERSION` when running the common suite.

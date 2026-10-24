@@ -42,4 +42,21 @@ for target in wrong_platform wrong_cpu; do
   fi
   grep -q 'target_platform must be Windows/x86_64' "$target.log"
 done
-printf '%s\n' 'PASS: executable runfiles, payload platforms, action identity, exec dependencies and native actions'
+# The same rule selects either CPU from its target platform. Only inspect the
+# ARM64 graph: the synthetic runtime and execution platform cannot run programs.
+for platform in audit_exec audit_arm64; do
+  bazel aquery 'mnemonic("FileWrite", //:data_adapter)' --config=remote --lockfile_mode=off --platforms="//:$platform" --extra_execution_platforms=//:audit_exec,//:audit_arm64 --extra_toolchains=//:adapter,//:adapter_arm64 --include_file_write_contents --output=jsonproto > "$platform.json"
+done
+jq -e '[.actions[] | (.fileContents | fromjson).arch] == ["x86_64"]' audit_exec.json
+jq -e '[.actions[] | (.fileContents | fromjson).arch] == ["aarch64"]' audit_arm64.json
+jq -e '[.actions[].executionPlatform] == ["//:audit_exec"]' audit_exec.json
+jq -e '[.actions[].executionPlatform] == ["//:audit_arm64"]' audit_arm64.json
+for target in apparent_platform fixed_x86; do
+  if bazel aquery "//:$target" --config=remote --lockfile_mode=off --platforms=//:audit_arm64 --extra_execution_platforms=//:audit_exec,//:audit_arm64 --extra_toolchains=//:adapter,//:adapter_arm64 > "$target-arm64.txt" 2> "$target-arm64.log"; then
+    printf 'expected ARM64 incompatibility: %s\n' "$target" >&2
+    exit 1
+  fi
+done
+grep -q 'target_platform must be Windows/aarch64' apparent_platform-arm64.log
+grep -q 'incompatible' fixed_x86-arm64.log
+printf '%s\n' 'PASS: executable runfiles, platform-selected CPU, payload platforms, action identity, exec dependencies and native actions'

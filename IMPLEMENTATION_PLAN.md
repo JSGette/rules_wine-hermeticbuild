@@ -9,6 +9,13 @@ The supported APIs are `windows_binary` and `windows_actions`; the corresponding
 sections below describe the original design, not current public APIs. Optional
 path mapping remains a separate implementation step.
 
+Architecture amendment: `windows_binary` now has one `adapter_toolchain_type` and
+no `arch` argument. Platform constraints select the implementation; its `arch`
+metadata supplies the runtime configuration and validates an optional Windows
+payload platform. Fixed-CPU prebuilts declare `target_compatible_with`. The
+architecture-specific runner types and `windows_actions` API remain unchanged.
+The original explicit-architecture adapter design below is superseded.
+
 ### Path mapping reassessment after removal
 
 The removal eliminates the custom action runfiles manifest, source/output argument

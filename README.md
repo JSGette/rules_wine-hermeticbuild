@@ -25,6 +25,7 @@ Until this module is published, consume a checkout through a local override:
 
 ```starlark
 bazel_dep(name = "rules_wine", version = "0.1.0")
+bazel_dep(name = "platforms", version = "1.1.0")  # CPU constraints for fixed prebuilts.
 local_path_override(module_name = "rules_wine", path = "../rules_wine")
 wine = use_extension("@rules_wine//wine/extension:wine.bzl", "wine")
 use_repo(wine, "wine_toolchains")
@@ -58,7 +59,7 @@ load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
 windows_binary(
     name = "generator",
     binary = "generator.exe",
-    arch = "x86_64",
+    target_compatible_with = ["@platforms//cpu:x86_64"],  # This prebuilt is x86_64.
 )
 ```
 
@@ -70,13 +71,19 @@ of a generic rule. It is currently scoped to non-Windows execution; use
 `binary` accepts one prebuilt PE file or an executable target. For source-built
 inputs, optionally set `target_platform = "//platforms:windows_x86_64"` to
 transition only the payload and its dependencies. That platform must declare
-Windows and the same CPU as `arch`; your compiler/toolchain must support it.
+Windows and the same CPU as the resolved adapter toolchain; your compiler/toolchain
+must support it.
 
 The adapter follows its own target platform: the host by default, or the
 consumer's selected executor when its attribute uses `cfg = "exec"`. For a named
 execution group use `cfg = config.exec("group")`. The consuming action must run
 on that same platform. Registering remote platforms alone does not make a foreign
 adapter executable locally with `bazel run`.
+
+There is no `arch` attribute: Bazel selects the adapter implementation from platform
+constraints. For a prebuilt supporting only one CPU, declare that restriction with
+`target_compatible_with`, as above. Bazel cannot infer a PE file's CPU during
+toolchain resolution; the supervisor still checks its actual CPU before execution.
 
 Callers provide invocation arguments and environment. There are no wrapper
 `arguments`, `env`, or `data` attributes and no location-expression expansion.
@@ -151,10 +158,9 @@ boundaries. A future implementation can use action-owned `Args` parameter files
 and deferred conversion of typed `File` arguments; callers will still own whether
 their payloads and outputs are safe to opt in.
 
-The two CPU-specific `windows_binary` rule declarations are intentional: Bazel
-8.5 requires static toolchain requirements. Their adapter toolchains match both
-executor and target OS/CPU. A configuration setting/transition solely to merge
-these declarations would add a public configuration contract. Action helpers use
+`windows_binary` is one rule requiring `adapter_toolchain_type`. Each implementation
+constrains both executor and target OS/CPU; the resolved toolchain supplies the
+architecture. This uses ordinary toolchain resolution on Bazel 8 and 9. Action helpers use
 the runner type declared by the consuming rule; it selects a same-CPU executor
 without restricting the final output platform.
 
@@ -205,7 +211,7 @@ For a complete override, define `windows_runner_toolchain` from
 can serve runner and binary adapter registrations. Native Windows uses a direct
 action runner without `launcher` or Wine files.
 Wine implementations can register against `runner_<arch>_toolchain_type` and
-`adapter_<arch>_toolchain_type`; native implementations register only as runners.
+`adapter_toolchain_type`; native implementations register only as runners.
 Both have executor OS/CPU constraints. Runners impose no final-output
 constraints; binary adapters additionally have matching target OS/CPU constraints.
 `WindowsRunnerInfo` and `WineRuntimeInfo` expose

@@ -2,23 +2,21 @@
 
 load("@hermetic_launcher//launcher:lib.bzl", "launcher")
 load(":paths.bzl", "runfile_path")
-load(":payload.bzl", "payload", "payload_attrs")
+load(":payload.bzl", "payload")
 
 def adapter_impl(ctx):
     """Produce an executable using the default group's adapter toolchain.
 
     Args:
-        ctx: Executable rule context with adapter_attrs.
+        ctx: Executable rule context with payload_attrs.
 
     Returns:
         DefaultInfo for the native executable and complete runfiles.
     """
-    arch = ctx.attr._arch
-    adapter_type = Label("//wine:adapter_" + arch + "_toolchain_type")
-    runner = ctx.toolchains[adapter_type].windows
+    runner = ctx.toolchains[Label("//wine:adapter_toolchain_type")].windows
     if runner.backend != "wine":
         fail("windows_binary requires a Wine adapter toolchain")
-    binary = payload(ctx, arch)
+    binary = payload(ctx, runner.arch)
     executable = ctx.actions.declare_file(ctx.label.name)
     config = ctx.actions.declare_file(executable.basename + ".json", sibling = executable)
     entrypoint = launcher.entrypoint(runner.launcher.executable)
@@ -29,7 +27,7 @@ def adapter_impl(ctx):
         cfg = "exec",
     )
     ctx.actions.write(config, json.encode({
-        "arch": arch,
+        "arch": runner.arch,
         "payload": runfile_path(ctx, binary.file),
         "runfiles": True,
         "loader": runfile_path(ctx, runner.runtime.loader),
@@ -44,8 +42,3 @@ def adapter_impl(ctx):
     if binary.run_environment != None:
         providers.append(binary.run_environment)
     return providers
-
-def adapter_attrs(arch):
-    attrs = payload_attrs()
-    attrs["_arch"] = attr.string(default = arch)
-    return attrs
