@@ -66,9 +66,17 @@ an external executable's data and expected payload-platform analysis errors.
 It also inspects the same adapter under x86_64 and ARM64 target platforms,
 checking the selected CPU and rejecting incompatible fixed prebuilts. ARM64
 checks inspect action graphs; they do not execute the synthetic runtime.
+The execution-group regression selects ARM64 Wine and x86_64 native Windows
+within one rule under both target CPUs. It checks the execution platforms, Wine
+configuration CPU, and backend-specific path arguments. A fixed-x86 action
+selects x86 execution even with an ARM64 target, and fails when only ARM64
+execution is available. The new public context API fails to load against
+`dbba164`, which still exposes architecture-specific runner types.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
-`USE_BAZEL_VERSION` when running the common suite.
+`USE_BAZEL_VERSION` when running the common suite. Add `--lockfile_mode=off` to
+root-workspace commands when checking another Bazel major version to avoid
+rewriting the checked-in lockfile into that version's format.
 
 ## Source build and fixture maintenance
 

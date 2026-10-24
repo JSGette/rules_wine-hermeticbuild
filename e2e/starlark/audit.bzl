@@ -26,13 +26,14 @@ stub = rule(
 )
 
 def _collision_impl(ctx):
+    runner = windows_actions.resolve(ctx)
     outputs = []
     for name in ["Aa", "BB"]:
         out = ctx.actions.declare_file(name)
         windows_actions.run(
             ctx,
+            runner = runner,
             executable = ctx.file.binary,
-            arch = "x86_64",
             arguments = [name],
             outputs = [out],
             env = {"DISTINCT": name},
@@ -45,7 +46,7 @@ collision = rule(
     attrs = {
         "binary": attr.label(allow_single_file = True, mandatory = True),
     },
-    toolchains = [windows_actions.toolchain_type("x86_64")],
+    toolchains = [windows_actions.toolchain_type],
 )
 
 def _symlink_data_impl(ctx):

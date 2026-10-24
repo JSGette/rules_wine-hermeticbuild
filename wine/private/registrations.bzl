@@ -37,7 +37,7 @@ def register_runners(distributions):
                 native.toolchain(
                     name = key if kind == "runner" else key + "_" + kind,
                     toolchain = key + "_impl",
-                    toolchain_type = "@rules_wine//wine:adapter_toolchain_type" if kind == "adapter" else "@rules_wine//wine:runner_" + arch + "_toolchain_type",
+                    toolchain_type = "@rules_wine//wine:adapter_toolchain_type" if kind == "adapter" else "@rules_wine//wine:runner_toolchain_type",
                     exec_compatible_with = constraints,
                     target_compatible_with = constraints if kind == "adapter" else [],
                 )

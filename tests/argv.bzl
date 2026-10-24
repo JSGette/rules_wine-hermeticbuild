@@ -34,14 +34,15 @@ argv_record_test = rule(
 )
 
 def _two_actions_impl(ctx):
+    runner = windows_actions.resolve(ctx)
     outputs = []
     for name in ["Aa", "BB"]:
         output = ctx.actions.declare_file(ctx.label.name + "/" + name)
         windows_actions.run(
             ctx,
+            runner = runner,
             executable = ctx.file.binary,
-            arch = "x86_64",
-            arguments = ["--output", windows_actions.path(ctx, output, "x86_64"), name],
+            arguments = ["--output", windows_actions.path(runner, output), name],
             env = {"FIXTURE_VALUE": name},
             outputs = [output],
         )
@@ -51,9 +52,10 @@ def _two_actions_impl(ctx):
 two_actions = rule(
     implementation = _two_actions_impl,
     attrs = {
-        "binary": attr.label(allow_single_file = True, mandatory = True),
+        "binary": attr.label(allow_single_file = True, cfg = "exec", mandatory = True),
     },
-    toolchains = [windows_actions.toolchain_type("x86_64")],
+    toolchains = [windows_actions.toolchain_type],
+    exec_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 def _aliases_impl(ctx):

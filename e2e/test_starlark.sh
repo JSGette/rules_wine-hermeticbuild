@@ -59,4 +59,26 @@ for target in apparent_platform fixed_x86; do
 done
 grep -q 'target_platform must be Windows/aarch64' apparent_platform-arm64.log
 grep -q 'incompatible' fixed_x86-arm64.log
-printf '%s\n' 'PASS: executable runfiles, platform-selected CPU, payload platforms, action identity, exec dependencies and native actions'
+# One rule uses different CPUs/backends on its two execution groups. Its target
+# platform must not steer either group, and paths must follow their own backend.
+for platform in audit_exec audit_arm64; do
+  bazel aquery //:grouped_actions --config=remote --lockfile_mode=off --platforms="//:$platform" --extra_execution_platforms=//:audit_arm64,//:audit_windows --extra_toolchains=//:runner_arm64,//:native_runner --include_file_write_contents --output=jsonproto > "groups-$platform.json"
+  jq -e '
+    [.actions[] | select(.mnemonic == "WineFixture")] as $wine |
+    [.actions[] | select(.mnemonic == "NativeFixture")] as $native |
+    [$wine[].executionPlatform] == ["//:audit_arm64"] and
+    [$native[].executionPlatform] == ["//:audit_windows"] and
+    ([$wine[].arguments[] | contains("{windows_path:")] | any) and
+    ([$native[].arguments[] | contains("{windows_path:")] | any | not) and
+    [.actions[] | select(.mnemonic == "FileWrite") | (.fileContents | fromjson).arch] == ["aarch64"]
+  ' "groups-$platform.json"
+done
+# Fixed-x86 payloads constrain execution, even when the final target is ARM64.
+bazel aquery //:fixed_action --config=remote --lockfile_mode=off --platforms=//:audit_arm64 --extra_execution_platforms=//:audit_arm64,//:audit_exec --extra_toolchains=//:runner_arm64,//:runner --output=jsonproto > fixed-action.json
+jq -e '[.actions[] | select(.mnemonic == "WindowsRun").executionPlatform] == ["//:audit_exec", "//:audit_exec"]' fixed-action.json
+if bazel aquery //:fixed_action --config=remote --lockfile_mode=off --extra_execution_platforms=//:audit_arm64 --extra_toolchains=//:runner_arm64 > fixed-action-arm64.txt 2> fixed-action-arm64.log; then
+  printf '%s\n' 'expected fixed-x86 action to reject ARM64-only execution' >&2
+  exit 1
+fi
+grep -Eq 'No matching (execution platform|toolchains)' fixed-action-arm64.log
+printf '%s\n' 'PASS: executable runfiles, target/exec CPU separation, payload platforms, action identity, exec groups and native actions'

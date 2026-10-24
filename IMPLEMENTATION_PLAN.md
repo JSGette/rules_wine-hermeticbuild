@@ -12,9 +12,12 @@ path mapping remains a separate implementation step.
 Architecture amendment: `windows_binary` now has one `adapter_toolchain_type` and
 no `arch` argument. Platform constraints select the implementation; its `arch`
 metadata supplies the runtime configuration and validates an optional Windows
-payload platform. Fixed-CPU prebuilts declare `target_compatible_with`. The
-architecture-specific runner types and `windows_actions` API remain unchanged.
-The original explicit-architecture adapter design below is superseded.
+payload platform. Fixed-CPU adapter prebuilts declare `target_compatible_with`.
+Actions now use one `runner_toolchain_type`, selected by executor OS/CPU.
+`windows_actions.resolve` binds the selected runner and execution group once;
+`run` and `path` receive that context. Fixed-CPU action payloads constrain their
+execution group with `exec_compatible_with`, independently of final-output CPU.
+The explicit-architecture adapter and runner-type designs below are superseded.
 
 ### Path mapping reassessment after removal
 

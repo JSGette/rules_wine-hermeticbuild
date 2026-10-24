@@ -6,7 +6,7 @@ def _rloc(ctx, file):
     return file.short_path[3:] if file.short_path.startswith("../") else ctx.workspace_name + "/" + file.short_path
 
 def _impl(ctx):
-    runner = ctx.exec_groups["test"].toolchains[windows_actions.toolchain_type("x86_64")].windows
+    runner = windows_actions.resolve(ctx, exec_group = "test").windows
     executable = ctx.actions.declare_file(ctx.label.name)
     config = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.symlink(output = executable, target_file = ctx.executable._verify, is_executable = True)
@@ -43,7 +43,7 @@ runtime_contract_test = rule(
     },
     exec_groups = {
         "test": exec_group(
-            toolchains = [windows_actions.toolchain_type("x86_64")],
+            toolchains = [windows_actions.toolchain_type],
             exec_compatible_with = ["@platforms//os:linux", "@platforms//cpu:x86_64"],
         ),
     },

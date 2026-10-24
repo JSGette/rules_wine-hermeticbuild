@@ -4,12 +4,12 @@ load("//wine:actions.bzl", "windows_actions")
 
 def _impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
-    group = "default" if ctx.attr.default_group else "windows"
-    arguments = ["--output", windows_actions.path(ctx, output, "x86_64", exec_group = group)]
+    runner = windows_actions.resolve(ctx, exec_group = ctx.attr._exec_group)
+    arguments = ["--output", windows_actions.path(runner, output)]
     kwargs = {}
     if ctx.attr.additional_tools:
         extra = ctx.attr.extra[DefaultInfo]
-        arguments.append(windows_actions.path(ctx, ctx.file.extra_data, "x86_64", format = "@%s", exec_group = group))
+        arguments.append(windows_actions.path(runner, ctx.file.extra_data, format = "@%s"))
         kwargs["tools"] = [extra.files_to_run]
 
         # A directly addressed File is an input. FTR runfiles have their own
@@ -17,26 +17,38 @@ def _impl(ctx):
         kwargs["runtime_files"] = [ctx.file.extra_data]
     windows_actions.run(
         ctx,
+        runner = runner,
         executable = ctx.file.binary,
-        arch = "x86_64",
         arguments = arguments,
         outputs = [output],
-        exec_group = group,
         **kwargs
     )
     return [DefaultInfo(files = depset([output]))]
 
+def _attrs(group):
+    cfg = "exec" if group == "default" else config.exec(group)
+    return {
+        "binary": attr.label(allow_single_file = True, cfg = cfg, mandatory = True),
+        "extra": attr.label(executable = True, cfg = cfg),
+        "extra_data": attr.label(allow_single_file = True, cfg = cfg, default = "//tests:fixture/data café.txt"),
+        "additional_tools": attr.bool(),
+        "_exec_group": attr.string(default = group),
+    }
+
 tools_action = rule(
     implementation = _impl,
-    attrs = {
-        "binary": attr.label(allow_single_file = True, mandatory = True),
-        "extra": attr.label(executable = True, cfg = "exec"),
-        "extra_data": attr.label(allow_single_file = True, cfg = "exec", default = "//tests:fixture/data café.txt"),
-        "additional_tools": attr.bool(),
-        "default_group": attr.bool(),
-    },
-    toolchains = [windows_actions.toolchain_type("x86_64")],
+    attrs = _attrs("windows"),
     exec_groups = {
-        "windows": exec_group(toolchains = [windows_actions.toolchain_type("x86_64")]),
+        "windows": exec_group(
+            toolchains = [windows_actions.toolchain_type],
+            exec_compatible_with = ["@platforms//cpu:x86_64"],
+        ),
     },
+)
+
+default_tools_action = rule(
+    implementation = _impl,
+    attrs = _attrs("default"),
+    toolchains = [windows_actions.toolchain_type],
+    exec_compatible_with = ["@platforms//cpu:x86_64"],
 )

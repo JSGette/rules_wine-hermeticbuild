@@ -1,8 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-toolchain_type(name = "runner_x86_64_toolchain_type")
-
-toolchain_type(name = "runner_aarch64_toolchain_type")
+toolchain_type(name = "runner_toolchain_type")
 
 exports_files([
     "actions.bzl",

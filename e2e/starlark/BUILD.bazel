@@ -1,6 +1,7 @@
 load("@rules_wine//wine:toolchain.bzl", "windows_runner_toolchain")
 load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
 load(":audit.bzl", "collision", "stub", "symlink_data")
+load(":execution.bzl", "grouped_actions")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,7 +42,7 @@ toolchain(
         "@platforms//cpu:x86_64",
     ],
     toolchain = ":native_implementation",
-    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+    toolchain_type = "@rules_wine//wine:runner_toolchain_type",
 )
 
 stub(
@@ -66,8 +67,12 @@ windows_runner_toolchain(
 
 toolchain(
     name = "sidecar_runner",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
     toolchain = ":sidecar_implementation",
-    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+    toolchain_type = "@rules_wine//wine:runner_toolchain_type",
 )
 
 stub(name = "built_loader")
@@ -83,8 +88,12 @@ windows_runner_toolchain(
 
 toolchain(
     name = "generated_runner",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
     toolchain = ":generated_implementation",
-    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+    toolchain_type = "@rules_wine//wine:runner_toolchain_type",
 )
 
 windows_runner_toolchain(
@@ -98,8 +107,12 @@ windows_runner_toolchain(
 
 toolchain(
     name = "runner",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
     toolchain = ":implementation",
-    toolchain_type = "@rules_wine//wine:runner_x86_64_toolchain_type",
+    toolchain_type = "@rules_wine//wine:runner_toolchain_type",
 )
 
 toolchain(
@@ -126,6 +139,22 @@ windows_runner_toolchain(
 )
 
 toolchain(
+    name = "runner_arm64",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    toolchain = "implementation_arm64",
+    toolchain_type = "@rules_wine//wine:runner_toolchain_type",
+)
+
+grouped_actions(
+    name = "grouped_actions",
+    native = "payload_with_data",
+    wine = "payload_with_data",
+)
+
+toolchain(
     name = "adapter_arm64",
     exec_compatible_with = [
         "@platforms//os:linux",
@@ -142,6 +171,12 @@ toolchain(
 collision(
     name = "collision",
     binary = "payload.exe",
+)
+
+collision(
+    name = "fixed_action",
+    binary = "payload.exe",
+    exec_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 symlink_data(

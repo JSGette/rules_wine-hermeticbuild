@@ -106,10 +106,15 @@ Response-file contents and encoding belong to the payload.
 
 ## Other rule authors
 
+For a standalone Windows x86_64 prebuilt, constrain the action's execution group
+to x86_64 and resolve its runner once. The final output may target a different
+OS or CPU.
+
 ```starlark
 load("@rules_wine//wine:actions.bzl", "windows_actions")
 
 def _impl(ctx):
+    runner = windows_actions.resolve(ctx, exec_group = "windows")
     out = ctx.actions.declare_file(ctx.label.name + ".txt")
     response = ctx.actions.args()
     response.add_all(["opaque value", "café"])
@@ -117,28 +122,56 @@ def _impl(ctx):
     response.set_param_file_format("multiline")
     windows_actions.run(
         ctx,
-        executable = ctx.attr.tool[DefaultInfo].files_to_run,
-        arch = "x86_64",
+        runner = runner,
+        executable = ctx.file.tool,
         arguments = [
             "--output",
-            windows_actions.path(ctx, out, arch = "x86_64", exec_group = "windows"),
+            windows_actions.path(runner, out),
             response,
         ],
         outputs = [out],
-        exec_group = "windows",
     )
     return [DefaultInfo(files = depset([out]))]
 
 my_rule = rule(
     implementation = _impl,
-    attrs = {"tool": attr.label(executable = True, cfg = "exec")},
-    exec_groups = {"windows": exec_group(toolchains = [windows_actions.toolchain_type("x86_64")])},
+    attrs = {
+        "tool": attr.label(
+            allow_single_file = True,
+            mandatory = True,
+            cfg = config.exec("windows"),
+        ),
+    },
+    exec_groups = {
+        "windows": exec_group(
+            toolchains = [windows_actions.toolchain_type],
+            exec_compatible_with = ["@platforms//cpu:x86_64"],
+        ),
+    },
 )
 ```
 
-Declare the toolchain type on the group before calling the helper. A native
-Windows action uses the payload's FilesToRunProvider directly; Wine uses its
-supervisor, config and complete distribution as declared inputs. `inputs` accepts
+`windows_actions.toolchain_type` is a Label, shared by every supported CPU.
+Declare it on the rule or execution group before calling `resolve`. The returned
+context binds the selected `WindowsRunnerInfo` (available as `runner.windows`)
+and execution group; pass that same context to `run` and `path`. No architecture
+or group is repeated on those calls. `resolve(ctx)` uses the default group.
+Resolution chooses the runner for the executor, independently of the rule's
+target platform. A fixed-CPU payload requires an execution constraint; its
+`target_compatible_with` does not select the consumer's executor.
+
+The helper does not compile or transition the payload. The example accepts a
+prebuilt `.exe`: `config.exec("windows")` means the group named `windows`, not
+the Windows operating system. For source-built payloads, their owning rule must
+provide a Windows compilation transition matching the executor CPU. Merely
+setting `cfg = "exec"` on a `cc_binary` would build a Linux executable on a
+Linux executor. Use an executable attribute and pass its `FilesToRunProvider`
+when the payload owns runfiles. Alternatively, consume `windows_binary` through
+`cfg = "exec"` and ordinary `ctx.actions.run` for Wine-only executable tools.
+
+A native Windows action invokes the payload directly, preserving its
+FilesToRunProvider when supplied; Wine uses its supervisor, config and complete
+distribution as declared inputs. `inputs` accepts
 a list or depset; `runtime_files`, outputs, environment, mnemonic and additional
 `ctx.actions.run` keyword arguments are supported. Args stay lazy. Explicit path
 markers inside a response file are not interpreted by the supervisor; use
@@ -210,7 +243,7 @@ For a complete override, define `windows_runner_toolchain` from
 `launcher`, `loader`, `server`, `files`, `identity`, `requirements`, and `env`; it
 can serve runner and binary adapter registrations. Native Windows uses a direct
 action runner without `launcher` or Wine files.
-Wine implementations can register against `runner_<arch>_toolchain_type` and
+Wine implementations can register against `runner_toolchain_type` and
 `adapter_toolchain_type`; native implementations register only as runners.
 Both have executor OS/CPU constraints. Runners impose no final-output
 constraints; binary adapters additionally have matching target OS/CPU constraints.

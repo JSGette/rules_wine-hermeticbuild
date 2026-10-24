@@ -1,49 +1,59 @@
-"""Low-level Windows actions. Declare toolchain_type(arch) on the same exec group."""
+"""Low-level Windows actions using one resolved execution-group context."""
 
 load("//wine/private:paths.bzl", "path_marker")
 
-def toolchain_type(arch):
-    if arch not in ["x86_64", "aarch64"]:
-        fail("unsupported Windows payload architecture: " + arch)
-    return Label("//wine:runner_" + arch + "_toolchain_type")
+_TOOLCHAIN_TYPE = Label("//wine:runner_toolchain_type")
 
-def path(ctx, file, arch, format = "%s", exec_group = "default"):
-    """Explicit path interpolation; only these values are converted for Wine.
+def _resolve(ctx, *, exec_group = "default"):
+    """Bind a runner to the execution group declaring its toolchain type.
 
     Args:
         ctx: The consuming rule context.
+        exec_group: Group declaring windows_actions.toolchain_type.
+
+    Returns:
+        Context for run/path, containing WindowsRunnerInfo as windows and the
+        action's exec_group. The payload must match windows.arch; constrain the
+        execution group for fixed-CPU prebuilts.
+    """
+    toolchains = ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains
+    return struct(
+        windows = toolchains[_TOOLCHAIN_TYPE].windows,
+        exec_group = None if exec_group == "default" else exec_group,
+    )
+
+def path(runner, file, format = "%s"):
+    """Explicit path interpolation; only these values are converted for Wine.
+
+    Args:
+        runner: Context returned by windows_actions.resolve.
         file: File, or action-relative path string.
-        arch: Declared Windows payload CPU.
         format: Surrounding option syntax, e.g. /out:%s.
-        exec_group: Execution group declaring the runner toolchain.
 
     Returns:
         A path argument formatted for the selected executor.
     """
-    toolchains = ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains
-    runner = toolchains[toolchain_type(arch)].windows
     value = file.path if type(file) == "File" else file
-    return format % (path_marker(value) if runner.backend == "wine" else value)
+    return format % (path_marker(value) if runner.windows.backend == "wine" else value)
 
 def _run(
         ctx,
         *,
+        runner,
         executable,
-        arch,
         outputs,
         arguments = [],
         inputs = [],
         env = {},
         runtime_files = [],
         tools = [],
-        exec_group = "default",
         mnemonic = "WindowsRun",
         progress_message = None,
         **kwargs):
     if not outputs:
         fail("Windows actions require at least one output to identify their configuration")
-    toolchains = ctx.toolchains if exec_group == "default" else ctx.exec_groups[exec_group].toolchains
-    runner = toolchains[toolchain_type(arch)].windows
+    action_group = runner.exec_group
+    runner = runner.windows
     payload = executable.executable if type(executable) == "FilesToRunProvider" else executable
     input_set = inputs if type(inputs) == "depset" else depset(inputs)
 
@@ -53,7 +63,6 @@ def _run(
         tools = depset([executable], transitive = [tools])
     else:
         tools = [executable] + (tools.to_list() if type(tools) == "depset" else tools)
-    action_group = None if exec_group == "default" else exec_group
     if runner.backend == "native":
         # No process adapter for Windows actions. Explicit path markers are not
         # needed on Windows; use Args.add(File) for platform-neutral arguments.
@@ -65,7 +74,7 @@ def _run(
             env = env,
             tools = tools,
             exec_group = action_group,
-            toolchain = toolchain_type(arch),
+            toolchain = _TOOLCHAIN_TYPE,
             mnemonic = mnemonic,
             progress_message = progress_message,
             **kwargs
@@ -76,7 +85,7 @@ def _run(
     # unlike hashes, distinct output paths cannot alias this configuration.
     config = ctx.actions.declare_file(ctx.label.name + ".wine/" + outputs[0].path + ".json")
     ctx.actions.write(config, json.encode({
-        "arch": arch,
+        "arch": runner.arch,
         "loader": runner.runtime.loader.path,
         "server": runner.runtime.server.path,
         "payload": payload.path,
@@ -97,10 +106,10 @@ def _run(
         },
         tools = tools,
         exec_group = action_group,
-        toolchain = toolchain_type(arch),
+        toolchain = _TOOLCHAIN_TYPE,
         mnemonic = mnemonic,
         progress_message = progress_message,
         **kwargs
     )
 
-windows_actions = struct(run = _run, path = path, toolchain_type = toolchain_type)
+windows_actions = struct(run = _run, path = path, resolve = _resolve, toolchain_type = _TOOLCHAIN_TYPE)

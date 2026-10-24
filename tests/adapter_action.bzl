@@ -43,12 +43,13 @@ runfiles_adapter_action = rule(
 )
 
 def _runfiles_impl(ctx):
+    runner = windows_actions.resolve(ctx)
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     windows_actions.run(
         ctx,
+        runner = runner,
         executable = ctx.attr.tool[0][DefaultInfo].files_to_run,
-        arch = "x86_64",
-        arguments = [windows_actions.path(ctx, output, "x86_64")],
+        arguments = [windows_actions.path(runner, output)],
         outputs = [output],
         mnemonic = "RunfilesFixture",
     )
@@ -71,5 +72,6 @@ runfiles_action = rule(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     },
-    toolchains = [windows_actions.toolchain_type("x86_64")],
+    toolchains = [windows_actions.toolchain_type],
+    exec_compatible_with = ["@platforms//cpu:x86_64"],
 )
