@@ -1,6 +1,6 @@
 # rules_wine
 
-Run Windows executables as Bazel actions, executable tools, and tests. Wine runs
+Run Windows executables as Bazel actions and executable tools. Wine runs
 same-CPU payloads on Linux or macOS; Windows actions execute the payload directly.
 The rules do not own your compiler, SDK, language, or final output platform.
 
@@ -8,7 +8,7 @@ Bazel 8.5.0 and 9.3.1 are exercised. Initial runtime status:
 
 | Executor / Windows payload | Acquisition | Validation |
 | --- | --- | --- |
-| Linux x86_64 / x86_64 | Pinned Wine 11.0 default | Remote actions/tests and lifecycle pass |
+| Linux x86_64 / x86_64 | Pinned Wine 11.0 default | Remote actions, adapters and lifecycle pass |
 | Linux ARM64 / ARM64 | User-supplied native archive | Supervisor cross-compiled; execution untested |
 | Windows x86_64 / x86_64 | No Wine required | Direct-action graph verified; execution untested |
 | Windows ARM64 / ARM64 | No Wine required | Supervisor cross-compiled; direct-action graph verified; execution untested |
@@ -38,8 +38,8 @@ This module depends on `rules_cc` and `@llvm` and registers `@llvm` C++ toolchai
 downstream builds compile the supervisor on demand.
 `@llvm` 0.7.6 uses Bazel APIs unavailable in Bazel 7.7, so this source-built
 version requires Bazel 8.5 or newer.
-Native-only Windows consumers can omit `x86_64 = "default"`; native registrations
-then have no Wine archive dependency. Archives are fetched only when referenced.
+Native Windows registrations have no Wine archive dependency. Archives are fetched
+only when referenced.
 
 The default is [Kron4ek Wine 11.0 amd64 WoW64](https://github.com/Kron4ek/Wine-Builds/releases/tag/11.0),
 SHA256 `39574efa1132c3ca0d5c77dd2eddbe4a49cca0d6cc2c290ff4924493a1c40314`.
@@ -48,21 +48,11 @@ Ubuntu 24.04 console execution was verified; missing FreeType emits warnings.
 Other Windows subsystems can require additional host libraries. A pinned archive
 is not a fully bundled Linux userspace. See [testing and maintenance](tests/README.md).
 
-## Actions, binaries and tests
+## Executable adapters
 
 ```starlark
-load("@rules_wine//wine:windows_run.bzl", "windows_run")
 load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
-load("@rules_wine//wine:windows_test.bzl", "windows_test")
 
-windows_run(
-    name = "generated",
-    binary = "generator.exe",
-    arch = "x86_64",
-    srcs = ["schema.txt"],
-    outs = ["generated.txt"],
-    arguments = ["--output", "$@", "$(location schema.txt)"],
-)
 windows_binary(
     name = "generator",
     binary = "generator.exe",
@@ -70,22 +60,18 @@ windows_binary(
     arguments = ["space value", "", "café"],
     data = ["companion.dll"],
 )
-windows_test(
-    name = "unit_test",
-    binary = "unit_test.exe",
-    arch = "x86_64",
-    arguments = ["--mode", "test"],
-    env = {"TEST_MODE": "unit"},
-    shard_count = 2,
-)
 ```
+
+`windows_binary` adapts a Windows executable for `bazel run` or use as a normal
+`cfg = "exec"` action tool. Rules that invoke Windows programs directly use
+`windows_actions.run`, described below. There is no public output-generation rule
+or test adapter.
 
 `binary` accepts one prebuilt PE file or an executable target. No transition is
 required for prebuilts. For source-built inputs, optionally set
 `target_platform = "//platforms:windows_x86_64"` to transition only the payload
 and its `data`; the platform must declare Windows and the same CPU as `arch`.
-Your own compiler/toolchain must support that configuration. `windows_run`'s final
-output configuration can be Linux, ARM64, or any other unrelated platform.
+Your own compiler/toolchain must support that configuration.
 
 `windows_binary` follows its own executable target platform: the host by default,
 the consuming executor when used as a `cfg = "exec"` tool. Remote execution
@@ -93,45 +79,36 @@ platform registration alone cannot produce a foreign launcher for local
 `bazel run`. Explicitly cross-configuring the adapter itself follows normal Bazel
 executable semantics; use `target_platform` to cross-configure just its payload.
 
-`arguments` preserves list elements, including empty strings and spaces. Tests
-also accept standard Bazel `args` and `--test_arg` with normal Bazel tokenization.
-`env`, transitive runfiles and `data` are preserved. Companion files retain their
-existing relative layout; DLLs requiring executable adjacency must already be
-adjacent in that layout. Merely adding an unrelated file to `data` does not move
-it beside the executable. Arrange source-generated executable/DLL outputs in the
-same directory. This iteration does not automatically forward arbitrary wrapped
-test providers or instrument coverage; wrap a test executable explicitly.
+`arguments` preserves list elements, including empty strings and spaces. `env`,
+transitive runfiles and `data` are preserved. Companion files retain their existing
+relative layout; DLLs requiring executable adjacency must already be adjacent in
+that layout. Adding an unrelated file to `data` does not move it beside the
+executable. Arrange generated executable/DLL outputs in the same directory.
 
-High-level arguments use typed file expressions: `$(location label)` names one
-declared payload/source/data file; `$@` names a sole action output. These convert
-to Wine's `Z:` namespace, leaving options and opaque strings intact. Embedded
-options work, e.g. `/out:$@`. `$(locations label)`, `$(SRCS)` and `$(OUTS)` expand
-to separate argv elements when they occupy a complete argument; embedded plural
-expressions must identify one file. Source/output variables apply to actions.
+Adapter arguments accept `$(location label)` for one declared payload/data file
+and `$(locations label)` for multiple files. A standalone plural expression expands
+to separate argv elements; an embedded plural must identify one file.
 `$(runfile logical/key)` names declared runfiles, including workspace symlinks,
-root symlinks and empty entries. Actions transport the complete runfiles manifest;
-adapters preserve the complete Bazel runfiles object. `$$` escapes a literal dollar.
-Expansion happens once, so dollars, spaces and braces inside filenames remain
-literal. Arbitrary Make variables and nested `{windows_path:...}` argument
-wrappers are unsupported. Adapter locations use canonical runfiles keys; action
-locations use execroot paths.
+root symlinks and empty entries. The adapter preserves the complete Bazel runfiles
+object; locations use logical runfiles keys and convert to Windows paths at runtime.
+`$$` escapes a literal dollar. Expansion happens once, so dollars, spaces and braces
+inside filenames remain literal. Action output/source variables and arbitrary Make
+variables are unsupported.
+
 Locations of executable targets name their executable; other targets expose
 their files in sorted path order. Location targets must produce at least one file.
-Aliases and configurable arguments are
-supported on Bazel 8.5 and 9.3. Bazel hides original alias labels from Starlark;
-a small compatibility bridge compares complete native expansions against typed
-File sets, with no shell parsing. If an alias ambiguously identifies both an
-executable and a different output set, reference the actual canonical target.
-Action manifests retain the wrapped executable's `_repo_mapping` file so standard
-Bazel runfiles libraries can resolve apparent repository names.
-Response-file contents and encoding belong to the payload; UTF-8 fixture content
-and Args parameter-file transport are exercised. Do not rewrite every slash.
+Aliases and configurable arguments are supported on Bazel 8.5 and 9.3. Bazel hides
+original alias labels from Starlark; a small compatibility bridge compares complete
+native expansions against typed File sets, with no shell parsing. If an alias
+ambiguously identifies both an executable and a different output set, reference
+the actual canonical target. Standard Bazel runfiles carry repository mappings.
+Response-file contents and encoding belong to the payload.
 
-Tests receive Bazel sharding variables, writable `TEST_TMPDIR`, result paths,
-runfiles paths, and XML output paths; Wine converts only declared test-protocol
-paths. On Bazel 9, constrain the actual test executor with
-`exec_group_compatible_with = {"test": [...]}`; the launcher is selected from that
-same `test` group. Older Bazel versions inherit default test constraints.
+The adapter resolves its own runfiles but does not yet export discovered runfiles
+environment variables to the payload. Programs relying on a runfiles library's
+automatic discovery can fail when used as action tools. Direct invocation through
+`windows_actions.run` with a `FilesToRunProvider` is verified; see the
+[adapter limitation](tests/README.md#verification-boundaries).
 
 ## Other rule authors
 
@@ -180,11 +157,19 @@ Use the helper instead of constructing markers by concatenating strings.
 Each wrapped action must have at least one output; its first output identifies
 the configuration under the rule's reserved `<name>.wine/` output directory.
 
-The two CPU-specific rule declarations are intentional: Bazel 8.5 requires static
-toolchain types and execution-group constraints. They select a same-CPU executor
-while allowing final outputs to target an unrelated platform and keeping tests
-on their actual test execution group. A configuration setting/transition solely
-to merge these declarations would add a public configuration contract.
+Optional Bazel output path mapping is not supported yet. The action helper's JSON
+configuration and explicit path helper currently capture execution paths during
+analysis. Removing the convenience action/test APIs does not fix those remaining
+boundaries. A future implementation can use action-owned `Args` parameter files
+and deferred conversion of typed `File` arguments; callers will still own whether
+their payloads and outputs are safe to opt in.
+
+The two CPU-specific `windows_binary` rule declarations are intentional: Bazel
+8.5 requires static toolchain requirements. Their adapter toolchains match both
+executor and target OS/CPU. A configuration setting/transition solely to merge
+these declarations would add a public configuration contract. Action helpers use
+the runner type declared by the consuming rule; it selects a same-CPU executor
+without restricting the final output platform.
 
 ## Custom distributions and toolchains
 
@@ -230,14 +215,13 @@ is assumed.
 For a complete override, define `windows_runner_toolchain` from
 `@rules_wine//wine:toolchain.bzl`. A Wine implementation needs `arch`, `backend`,
 `launcher`, `loader`, `server`, `files`, `identity`, `requirements`, and `env`; it
-can serve runner, binary adapter, and test adapter registrations. Native Windows
+can serve runner and binary adapter registrations. Native Windows
 uses two implementations: a direct action runner without `launcher` or Wine files,
 and an adapter with the source-built launcher but no Wine files. Register each
-against `runner_<arch>_toolchain_type`, `adapter_<arch>_toolchain_type`, or
-`test_adapter_<arch>_toolchain_type` as appropriate. All have executor OS/CPU
-constraints and no final-output constraints. Binary adapters additionally have
-matching target OS/CPU constraints; test adapters follow the test execution group
-and have no target constraints. `WindowsRunnerInfo` and `WineRuntimeInfo` expose
+against `runner_<arch>_toolchain_type` or `adapter_<arch>_toolchain_type` as
+appropriate. Both have executor OS/CPU constraints. Runners impose no final-output
+constraints; binary adapters additionally have matching target OS/CPU constraints.
+`WindowsRunnerInfo` and `WineRuntimeInfo` expose
 the advanced contract. `launcher` is an executable dependency in execution
 configuration; its FilesToRunProvider and full runfiles are preserved, including
 executable targets with sidecar outputs. Runtime

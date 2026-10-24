@@ -57,7 +57,7 @@ def payload(ctx, arch):
         arch: Declared payload CPU to validate after an optional transition.
 
     Returns:
-        Executable File, executable tool and merged runfiles in a struct.
+        Executable File and merged runfiles in a struct.
     """
     target = ctx.attr.binary[0]
     if ctx.attr.target_platform:
@@ -85,7 +85,5 @@ def payload(ctx, arch):
     ])
     return struct(
         file = executable,
-        files_to_run = info.files_to_run if info.files_to_run.executable else executable,
         runfiles = runfiles,
-        repo_mapping_manifest = info.files_to_run.repo_mapping_manifest,
     )

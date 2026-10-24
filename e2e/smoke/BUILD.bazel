@@ -1,27 +1,15 @@
-load("@rules_wine//wine:windows_run.bzl", "windows_run")
-load("@rules_wine//wine:windows_test.bzl", "windows_test")
+load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
+load(":consumer.bzl", "consumer")
 
-windows_run(
-    name = "generate",
-    outs = ["external.json"],
+windows_binary(
+    name = "adapter",
     arch = "x86_64",
-    arguments = [
-        "--output",
-        "$@",
-        "external-consumer",
-    ],
+    arguments = ["adapter-consumer"],
     binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
 )
 
-windows_test(
-    name = "consumer_test",
-    arch = "x86_64",
-    arguments = [
-        "--contract",
-        "with spaces",
-        "",
-        "café",
-        "--isolated",
-    ],
+consumer(
+    name = "generate",
+    adapter = "adapter",
     binary = "@rules_wine//tests:fixture/fixture_x86_64.exe",
 )

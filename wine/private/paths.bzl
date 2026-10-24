@@ -56,18 +56,15 @@ def _location_files(ctx, spelling, targets, labels):
                 fail("ambiguous executable/output alias; use the declared target's canonical label: " + spelling)
             matches = files
     if matches == None:
-        fail("location must be declared in binary, srcs or data and match Bazel's supported File-set encoding: " + spelling)
+        fail("location must be declared in binary or data and match Bazel's supported File-set encoding: " + spelling)
     return matches
 
 def expand_arguments(
         ctx,
         targets,
         *,
-        runfiles = False,
-        windows = True,
-        variables = {},
-        runfile_entries = {}):
-    """Expand declared labels and explicit output/source variables once.
+        runfile_entries):
+    """Expand declared labels and logical runfiles keys once.
 
     Each argument remains one argv element. A standalone plural expression
     expands to separate elements; an embedded plural must identify one file.
@@ -76,9 +73,6 @@ def expand_arguments(
     Args:
         ctx: Consuming rule context, including its arguments attribute.
         targets: Declared targets available to location expressions.
-        runfiles: Resolve locations to logical runfiles keys.
-        windows: Emit encoded Windows paths rather than ordinary exec paths.
-        variables: Source/output variable names mapped to Files.
         runfile_entries: Declared logical runfiles keys mapped to Files.
 
     Returns:
@@ -100,10 +94,7 @@ def expand_arguments(
                 parts[-1] += "$"
                 consumed = index + 2
                 continue
-            if argument.startswith("$@", index):
-                expression = "@"
-                consumed = index + 2
-            elif argument.startswith("$(", index):
+            if argument.startswith("$(", index):
                 expression, close, _ = argument[index + 2:].partition(")")
                 if not close:
                     fail("unterminated argument expression: " + argument)
@@ -115,19 +106,15 @@ def expand_arguments(
                 key = words[1]
                 if key not in runfile_entries:
                     fail("argument runfile must be declared in binary or data: " + key)
-                values = [path_marker(key, runfile = True) if windows else runfile_entries[key].path]
+                values = [path_marker(key, runfile = True)]
             else:
                 if words[0] in ["location", "locations"] and len(words) == 2:
                     files = _location_files(ctx, words[1].strip(), targets, labels)
                     if words[0] == "location" and len(files) != 1:
                         fail("$(location {}) requires one file; use $(locations ...)".format(words[1]))
-                elif expression in variables:
-                    files = variables[expression]
                 else:
                     fail("unsupported argument expression: $(" + expression + ")")
-                values = [runfile_path(ctx, file) if runfiles else file.path for file in files]
-                if windows:
-                    values = [path_marker(value, runfile = runfiles) for value in values]
+                values = [path_marker(runfile_path(ctx, file), runfile = True) for file in files]
             if index == 0 and consumed == len(argument):
                 parts = values
             elif len(values) == 1:

@@ -1,23 +1,21 @@
-"""Shared implementation of executable and test adapters."""
+"""Implementation of the runfiles-preserving executable adapter."""
 
 load(":paths.bzl", "expand_arguments", "runfile_path")
 load(":payload.bzl", "payload", "payload_attrs")
 load(":runfiles.bzl", "runfile_entries")
 
 def adapter_impl(ctx):
-    """Produce an executable whose runtime and payload follow the selected group.
+    """Produce an executable using the default group's adapter toolchain.
 
     Args:
-        ctx: Executable/test rule context with adapter_attrs.
+        ctx: Executable rule context with adapter_attrs.
 
     Returns:
         DefaultInfo for the native executable and complete runfiles.
     """
     arch = ctx.attr._arch
-    group = ctx.attr._group
-    adapter_type = Label("//wine:" + ("adapter_" if group == "default" else "test_adapter_") + arch + "_toolchain_type")
-    toolchains = ctx.toolchains if group == "default" else ctx.exec_groups[group].toolchains
-    runner = toolchains[adapter_type].windows
+    adapter_type = Label("//wine:adapter_" + arch + "_toolchain_type")
+    runner = ctx.toolchains[adapter_type].windows
     if not runner.launcher:
         fail("adapter toolchain requires an executable launcher")
     binary = payload(ctx, arch)
@@ -31,7 +29,6 @@ def adapter_impl(ctx):
         "args": expand_arguments(
             ctx,
             ctx.attr.binary + ctx.attr.data,
-            runfiles = True,
             runfile_entries = runfile_entries(ctx, binary.runfiles),
         ),
         "env": ctx.attr.env,
@@ -52,11 +49,10 @@ def adapter_impl(ctx):
     ).merge_all([binary.runfiles, runner.runfiles])
     return [DefaultInfo(files = depset([executable, config]), executable = executable, runfiles = runfiles)]
 
-def adapter_attrs(arch, group):
+def adapter_attrs(arch):
     attrs = payload_attrs()
     attrs.update({
         "_arch": attr.string(default = arch),
-        "_group": attr.string(default = group),
         "arguments": attr.string_list(),
         "env": attr.string_dict(),
     })

@@ -1,7 +1,5 @@
 load("@rules_wine//wine:toolchain.bzl", "windows_runner_toolchain")
 load("@rules_wine//wine:windows_binary.bzl", "windows_binary")
-load("@rules_wine//wine:windows_run.bzl", "windows_run")
-load("@rules_wine//wine:windows_test.bzl", "windows_test")
 load(":audit.bzl", "collision", "stub", "symlink_data")
 
 package(default_visibility = ["//visibility:public"])
@@ -100,12 +98,6 @@ toolchain(
     name = "adapter",
     toolchain = ":implementation",
     toolchain_type = "@rules_wine//wine:adapter_x86_64_toolchain_type",
-)
-
-toolchain(
-    name = "test_adapter",
-    toolchain = ":implementation",
-    toolchain_type = "@rules_wine//wine:test_adapter_x86_64_toolchain_type",
 )
 
 collision(
@@ -226,24 +218,6 @@ windows_binary(
     data = ["data/a}b"],
 )
 
-windows_run(
-    name = "dollar_path",
-    srcs = ["data/cash$money"],
-    outs = ["dollar.json"],
-    arch = "x86_64",
-    arguments = ["$(location :data/cash$money)"],
-    binary = "payload.exe",
-)
-
-windows_run(
-    name = "space_action",
-    srcs = ["data/file name"],
-    outs = ["space.json"],
-    arch = "x86_64",
-    arguments = ["$(location :data/file name)"],
-    binary = "payload.exe",
-)
-
 windows_binary(
     name = "space_adapter",
     arch = "x86_64",
@@ -252,9 +226,8 @@ windows_binary(
     data = ["data/file name"],
 )
 
-windows_run(
+windows_binary(
     name = "apparent_platform",
-    outs = ["platform.json"],
     arch = "x86_64",
     binary = "payload.exe",
     target_platform = "@rules_wine//platforms:windows_x86_64",
@@ -265,26 +238,11 @@ symlink_data(
     src = "only_via_alias",
 )
 
-windows_run(
-    name = "data_action",
-    outs = ["output.txt"],
-    arch = "x86_64",
-    binary = "payload.exe",
-    data = [":alias_data"],
-)
-
 windows_binary(
     name = "data_adapter",
     arch = "x86_64",
     binary = "payload.exe",
     data = [":alias_data"],
-)
-
-windows_test(
-    name = "only_test_adapter_test",
-    arch = "x86_64",
-    binary = "payload.exe",
-    tags = ["manual"],
 )
 
 windows_binary(

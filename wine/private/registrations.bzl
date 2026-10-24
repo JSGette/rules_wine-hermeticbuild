@@ -5,7 +5,7 @@ load("//wine:toolchain.bzl", "windows_runner_toolchain")
 # This declares a complete generated package, with platform-derived names.
 # buildifier: disable=unnamed-macro
 def register_runners(distributions):
-    """Declare direct runner, executable adapter and test adapter registrations.
+    """Declare direct runner and executable adapter registrations.
 
     Args:
         distributions: Distribution metadata keyed by executor OS and CPU.
@@ -40,7 +40,7 @@ def register_runners(distributions):
                     launcher = "@rules_wine//wine/runtime:supervisor",
                 )
             constraints = ["@platforms//os:" + os, "@platforms//cpu:" + arch]
-            for kind in ["runner", "adapter", "test_adapter"]:
+            for kind in ["runner", "adapter"]:
                 native.toolchain(
                     name = key if kind == "runner" else key + "_" + kind,
                     toolchain = key + ("_adapter_impl" if is_native and kind != "runner" else "_impl"),

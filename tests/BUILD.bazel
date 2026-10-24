@@ -1,12 +1,10 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("//tests:adapter_action.bzl", "adapter_action")
+load("//tests:adapter_action.bzl", "adapter_action", "runfiles_action")
 load("//tests:argv.bzl", "alias_data", "argv_record_test", "two_actions")
 load("//tests:param_action.bzl", "param_action")
 load("//tests:tools_action.bzl", "tools_action")
 load("//tests:verify_test.bzl", "runtime_contract_test")
 load("//wine:windows_binary.bzl", "windows_binary")
-load("//wine:windows_run.bzl", "windows_run")
-load("//wine:windows_test.bzl", "windows_test")
 
 cc_binary(
     name = "companion_build",
@@ -47,12 +45,8 @@ test_suite(
     tests = [
         "adapter_cli_test",
         "argv_test",
-        "external_location_test",
-        "generated_location_test",
         "payload_layout_test",
-        "runfiles_test",
         "runtime_contract_test",
-        "smoke_test",
     ],
 )
 
@@ -79,19 +73,49 @@ cc_binary(
         "-Wextra",
         "-Werror",
     ],
-    data = ["@rules_cc//:LICENSE"],
+    data = [
+        "aliases",
+        "@rules_cc//:LICENSE",
+    ],
     deps = ["@rules_cc//cc/runfiles"],
 )
 
-windows_run(
+runfiles_action(
     name = "standard_runfiles",
     testonly = True,
-    outs = ["standard-runfiles.json"],
+    tool = "runfiles_fixture",
+)
+
+tools_action(
+    name = "generate",
+    binary = "fixture/fixture_x86_64.exe",
+    default_group = True,
+)
+
+windows_binary(
+    name = "dll_binary",
     arch = "x86_64",
-    arguments = ["$@"],
-    binary = "runfiles_fixture",
-    data = ["aliases"],
-    target_platform = "@llvm//platforms:windows_x86_64",
+    arguments = ["--dll"],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/companion.dll"],
+)
+
+adapter_action(
+    name = "dll",
+    tool = "dll_binary",
+)
+
+windows_binary(
+    name = "response_binary",
+    arch = "x86_64",
+    arguments = ["@$(location fixture/response.txt)"],
+    binary = "fixture/fixture_x86_64.exe",
+    data = ["fixture/response.txt"],
+)
+
+adapter_action(
+    name = "response",
+    tool = "response_binary",
 )
 
 filegroup(
@@ -105,40 +129,6 @@ filegroup(
 alias_data(
     name = "aliases",
     src = "data/alias-only.txt",
-)
-
-windows_run(
-    name = "argv_action",
-    srcs = [
-        "data/a}b.txt",
-        "data/cash$money.txt",
-        "data/file name café.txt",
-        "//:.bazelversion",
-    ],
-    outs = ["argv-action}.json"],
-    arch = "x86_64",
-    arguments = [
-        "--output",
-        "$@",
-        "@$(location data/file name café.txt)",
-        "@$(location data/cash$money.txt)",
-        "@$(location data/a}b.txt)",
-        "@$(location //:.bazelversion)",
-        "$$literal",
-        "$$(location data/a)",
-        "",
-        "$(locations two_files)",
-        "opaque/option:one/two",
-        "café",
-        "@$(runfile root-alias.txt)",
-        "@$(runfile _main/logical/data.txt)",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    data = [
-        "aliases",
-        "data/a tests/data/b",
-        "two_files",
-    ],
 )
 
 windows_binary(
@@ -187,21 +177,6 @@ argv_record_test(
             "mapped external",
             "alias-only data",
         ]),
-        "argv_action": json.encode([
-            "space and Unicode data",
-            "literal dollar data",
-            "brace data",
-            "9.3.1",
-            "$literal",
-            "$(location data/a)",
-            "",
-            {"suffix": "tests\\data\\a"},
-            {"suffix": "tests\\data\\b"},
-            "opaque/option:one/two",
-            "café",
-            "alias-only data",
-            "alias-only data",
-        ]),
         "argv_adapter": json.encode([
             "space and Unicode data",
             "literal dollar data",
@@ -221,21 +196,6 @@ argv_record_test(
     },
 )
 
-windows_run(
-    name = "generate",
-    outs = ["generated.json"],
-    arch = "x86_64",
-    arguments = [
-        "--output",
-        "$@",
-        "space value",
-        "",
-        "Unicode: café",
-        "--isolated",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-)
-
 windows_binary(
     name = "binary",
     arch = "x86_64",
@@ -247,62 +207,9 @@ windows_binary(
     binary = "fixture/fixture_x86_64.exe",
 )
 
-windows_run(
-    name = "transitioned",
-    outs = ["transitioned.json"],
-    arch = "x86_64",
-    arguments = [
-        "--output",
-        "$@",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    target_platform = "//platforms:windows_x86_64",
-)
-
-windows_test(
-    name = "smoke_test",
-    arch = "x86_64",
-    arguments = [
-        "--contract",
-        "with spaces",
-        "",
-        "café",
-        "--isolated",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    env = {"FIXTURE_VALUE": "Unicode: café"},
-    shard_count = 2,
-)
-
 adapter_action(
     name = "adapter_tool",
     tool = "binary",
-)
-
-windows_run(
-    name = "dll",
-    outs = ["dll.json"],
-    arch = "x86_64",
-    arguments = [
-        "--dll",
-        "--output",
-        "$@",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["fixture/companion.dll"],
-)
-
-windows_run(
-    name = "response",
-    outs = ["response.json"],
-    arch = "x86_64",
-    arguments = [
-        "--output",
-        "$@",
-        "@$(location fixture/response.txt)",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["fixture/response.txt"],
 )
 
 runtime_contract_test(
@@ -319,48 +226,6 @@ exports_files(
         "fixture/fixture_aarch64.exe",
     ],
     visibility = ["//visibility:public"],
-)
-
-windows_test(
-    name = "runfiles_test",
-    arch = "x86_64",
-    arguments = ["@$(location fixture/data café.txt)"],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["fixture/data café.txt"],
-)
-
-windows_test(
-    name = "timeout_test",
-    timeout = "short",
-    arch = "x86_64",
-    arguments = ["--sleep"],
-    binary = "fixture/fixture_x86_64.exe",
-    tags = ["manual"],
-)
-
-windows_run(
-    name = "missing_dll",
-    outs = ["missing-dll.json"],
-    arch = "x86_64",
-    arguments = [
-        "--dll",
-        "--output",
-        "$@",
-    ],
-    binary = "fixture/fixture_x86_64.exe",
-    tags = ["manual"],
-)
-
-windows_run(
-    name = "generate_arm64",
-    outs = ["arm64.json"],
-    arch = "aarch64",
-    arguments = [
-        "--output",
-        "$@",
-    ],
-    binary = "fixture/fixture_aarch64.exe",
-    tags = ["manual"],
 )
 
 param_action(
@@ -413,22 +278,6 @@ tools_action(
     binary = "fixture/fixture_x86_64.exe",
     default_group = True,
     extra = "additional_tool",
-)
-
-windows_test(
-    name = "generated_location_test",
-    arch = "x86_64",
-    arguments = ["@$(location generate)"],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["generate"],
-)
-
-windows_test(
-    name = "external_location_test",
-    arch = "x86_64",
-    arguments = ["@$(location @platforms//:LICENSE)"],
-    binary = "fixture/fixture_x86_64.exe",
-    data = ["@platforms//:LICENSE"],
 )
 
 windows_binary(

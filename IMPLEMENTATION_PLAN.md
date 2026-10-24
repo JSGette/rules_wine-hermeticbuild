@@ -4,6 +4,50 @@ Status: initial implementation reviewed and merged into main. This document
 preserves the design plan; see [testing and maintenance](tests/README.md) for
 current verification commands and unverified platform boundaries.
 
+Scope amendment (2026-10-24): `windows_run` and `windows_test` were removed.
+The supported APIs are `windows_binary` and `windows_actions`; the corresponding
+sections below describe the original design, not current public APIs. Optional
+path mapping remains a separate implementation step.
+
+### Path mapping reassessment after removal
+
+The removal eliminates the custom action runfiles manifest, source/output argument
+expansion, and separate test-adapter toolchains. `windows_binary` already stores
+logical runfiles keys in its configuration, so it does not need configuration-prefix
+rewriting. Its action callers still need to preserve typed paths in runtime arguments.
+An independent adapter gap was exposed during migration: discovered runfiles
+environment variables are not forwarded to payloads using standard runfiles
+libraries. Record and fix that separately; path mapping does not solve discovery.
+
+Two boundaries remain in `windows_actions`:
+
+1. The Wine configuration is a separately written JSON file containing analysis-time
+   execution paths. Replace it with an action-owned `Args` parameter file, serializing
+   typed `File` fields through `map_each` when Bazel expands that action's arguments.
+2. `windows_actions.path` returns a string immediately. Replace or supplement it with
+   an API that adds a typed `File` to `Args`, deferring Windows marker encoding until
+   argument expansion. Ordinary strings must remain opaque.
+
+This follows [Bazel's path-mapping guidance](https://github.com/bazelbuild/bazel/discussions/22658).
+Use the action's parameter-file transport on both supported versions: Bazel 8.5's
+[standalone parameter-file write action](https://github.com/bazelbuild/bazel/blob/8.5.0/src/main/java/com/google/devtools/build/lib/analysis/actions/ParameterFileWriteAction.java)
+uses `PathMapper.NOOP`. A separate write action is therefore not the portable fix.
+No manually rewritten `bazel-out` prefix, configuration name, or collision logic
+belongs in this ruleset.
+
+Earlier isolated experiments on 8.5.0 and 9.3.1 verified action-owned JSON parameter
+files with mapping on/off, typed generated paths, executable runfiles, and automatic
+fallback for conflicting mapped inputs. They did not verify a complete Wine fix.
+The action helper is unchanged by this removal and remains unsupported for mapping.
+
+Keep opt-in with the consuming action's `supports-path-mapping` execution requirement
+and the user's `--experimental_output_paths=strip` flag. Consumers own their tools'
+output semantics. Environment strings and payload-owned response-file contents are
+not typed paths; do not guess or rewrite them. A future implementation must verify
+real Wine execution, generated inputs/outputs, mapped/unmapped fallback, executable
+runfiles and unchanged native Windows direct dispatch on Bazel 8 and 9. Cross-
+configuration cache reuse and native Windows runtime behavior remain unproven.
+
 Scope amendment (2026-10-23): user added native macOS execution and explicitly
 rejected Rosetta. Darwin x86_64/ARM64 custom-runtime support is implemented; no
 public ARM64 tar default is invented. The researched experimental native ARM64

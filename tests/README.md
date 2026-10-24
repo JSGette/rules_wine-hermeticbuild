@@ -8,54 +8,49 @@ For a native local Linux worker, omit `--config=remote`.
 
 ```sh
 bazel test //tests:integration --config=remote
-bazel build //tests:generate //tests:transitioned //tests:adapter_tool \
+bazel build //tests:generate //tests:adapter_tool \
   //tests:dll //tests:response //tests:param_file //tests:location_tool \
   //tests:additional_tools //tests:default_group //tests:default_group_tools \
   //tests:external_tools //tests:distinct_actions \
   --config=remote
-bazel test //tests:runfiles_test --config=remote --noenable_runfiles
+bazel test //tests:argv_test --config=remote --noenable_runfiles
 ```
 
 These use independent Windows executables to check output generation, DLL loading,
-child processes, argument preservation, generated/external data, test XML,
-sharding, and writable directories. The lifecycle test checks concurrent private
+child processes, argument preservation, and generated/external data. The lifecycle
+test checks concurrent private
 prefixes, cancellation ownership, descendant cleanup, exit status, architecture
 rejection, and unchanged input files. The layout test creates real symlinks because
 remote execution can materialize ordinary runfiles and hide local layout bugs.
 The argv regression asserts exact records for spaces, empty strings, dollars,
 braces, Unicode, source/generated/external files, escaped expressions and plural
 cardinality. A source-built Windows consumer uses the standard C++ runfiles
-library to verify apparent-repository mapping and alias-only action data.
+library through `windows_actions.run` with its `FilesToRunProvider` to verify
+apparent-repository mapping and alias-only runfiles. Bazel supplies the runfiles
+layout; the ruleset does not write a replacement manifest.
 
 Inspect the generated JSON files as well as the test results. Use `bazel aquery`
 to inspect executables, platforms, declared tools and inputs. Native actions must
 invoke the PE directly without Wine inputs:
 
 ```sh
-bazel aquery '//tests:generate + //tests:generate_arm64' --config=remote \
-  --extra_execution_platforms=//platforms:windows_x86_64,//platforms:windows_aarch64
+bazel aquery //tests:generate --config=remote \
+  --extra_execution_platforms=//platforms:windows_x86_64
 ```
-
-The following targets intentionally fail; they are excluded from the suite:
-
-```sh
-bazel build //tests:missing_dll --config=remote
-bazel test //tests:timeout_test --config=remote --test_timeout=3 --nocache_test_results
-```
-
-The first must report the missing companion DLL; the second must time out.
-The lifecycle test, rather than timeout status alone, verifies cleanup.
 
 ## Consumers and Bazel versions
 
 ```sh
-(cd e2e/smoke && bazel test //:consumer_test --config=remote)
+(cd e2e/smoke && bazel build //:generate --config=remote)
+jq -e '.args | index("external-consumer") != null' e2e/smoke/bazel-bin/external.json
+jq -e '.args | index("adapter-consumer") != null' e2e/smoke/bazel-bin/adapter.json
 e2e/test_custom_archive.sh /absolute/path/to/wine-11.0-amd64-wow64.tar.xz SHA256
 e2e/test_starlark.sh
 e2e/test_extension.sh
 ```
 
-The consumer exercises the public module setup. The script tests a custom
+The consumer exercises the public module setup, action helper and binary adapter.
+The script tests a custom
 archive through `http_archive`; supplying an incorrect checksum must fail fetching.
 Keep fixture compilers and test helpers out of production dependency paths.
 The Starlark and extension scripts retain their temporary workspaces for
@@ -68,18 +63,7 @@ The Starlark script checks the Aa/BB action configuration collision (failing on
 an external caller's apparent repository mapping and expected analysis errors.
 
 Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
-`USE_BAZEL_VERSION` when running the common suite. Bazel 9's execution-group check
-lives separately because its attributes are unavailable in older versions:
-
-```sh
-bazel aquery 'mnemonic("TestRunner", //tests/bazel9:wine_group_test)' --config=remote \
-  --extra_execution_platforms=//platforms:windows_x86_64,//platforms:remote_linux_x86_64
-```
-
-Inspect its `TestRunner` action: the actual test group must select Linux/Wine even
-when the default group selects Windows. Running this synthetic mismatch also
-requires a real Windows executor: source-building the Linux supervisor from the
-default Windows execution configuration invokes a Windows-hosted C++ compiler.
+`USE_BAZEL_VERSION` when running the common suite.
 
 ## Source build and fixture maintenance
 
@@ -111,7 +95,16 @@ and is not a substitute for native execution testing.
 
 Native Windows, Linux ARM64 and Intel macOS execution remain untested. Windows
 action graphs verify selection and inputs, not runtime behavior. Native local Linux
-sandbox execution remains unverified. The pinned `@llvm` macOS SDK URL returned 403
+sandbox execution remains unverified.
+
+Moving the C++ runfiles fixture behind `windows_binary` exposed an adapter gap:
+the supervisor discovers the adapter's runfiles but does not export that discovery
+to its payload. The payload's C++ runfiles library then fails to find runfiles when
+invoked as an action tool without runfiles environment variables. Logical argument
+locations still work. The direct `FilesToRunProvider` action check passes; adapter
+environment forwarding needs a separate fix before claiming equivalent discovery.
+
+The pinned `@llvm` macOS SDK URL returned 403
 during the source-build check. Both macOS architectures compiled using a temporary
 archive of the locally installed SDK; downstream macOS builds need a reachable SDK
 archive supplied through `@llvm`'s `osx.from_archive` extension until its default

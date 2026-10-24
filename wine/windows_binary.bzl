@@ -6,7 +6,7 @@ def _rule(arch):
     return rule(
         implementation = adapter_impl,
         executable = True,
-        attrs = adapter_attrs(arch, "default"),
+        attrs = adapter_attrs(arch),
         toolchains = [Label("//wine:adapter_" + arch + "_toolchain_type")],
     )
 

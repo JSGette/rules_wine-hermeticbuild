@@ -15,10 +15,12 @@ use_repo(wine, "wine_toolchains")
 register_toolchains("@wine_toolchains//:all")
 MODULE
 cp "$root/e2e/smoke/BUILD.bazel" "$scratch/BUILD.bazel"
+cp "$root/e2e/smoke/consumer.bzl" "$scratch/consumer.bzl"
 cp "$root/e2e/smoke/.bazelrc" "$scratch/.bazelrc"
 cp "$root/.bazelversion" "$scratch/.bazelversion"
 printf '%s\n' "Verification consumer: $scratch"
 cd "$scratch"
-trap 'bazel shutdown >/dev/null 2>&1' EXIT
+trap 'bazel --output_base="$scratch/output" shutdown >/dev/null 2>&1' EXIT
 bazel --output_base="$scratch/output" build //:generate --config=remote
-bazel --output_base="$scratch/output" test //:consumer_test --config=remote
+jq -e '.args | index("external-consumer") != null' bazel-bin/external.json
+jq -e '.args | index("adapter-consumer") != null' bazel-bin/adapter.json
