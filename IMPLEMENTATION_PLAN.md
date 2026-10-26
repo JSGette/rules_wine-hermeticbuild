@@ -6,8 +6,7 @@ current verification commands and unverified platform boundaries.
 
 Scope amendment (2026-10-24): `windows_run` and `windows_test` were removed.
 The supported APIs are `windows_binary` and `windows_actions`; the corresponding
-sections below describe the original design, not current public APIs. Optional
-path mapping remains a separate implementation step.
+sections below describe the original design, not current public APIs.
 
 Architecture amendment: `windows_binary` now has one `adapter_toolchain_type` and
 no `arch` argument. Platform constraints select the implementation; its `arch`
@@ -15,7 +14,7 @@ metadata supplies the runtime configuration and validates an optional Windows
 payload platform. Fixed-CPU adapter prebuilts declare `target_compatible_with`.
 Actions now use one `runner_toolchain_type`, selected by executor OS/CPU.
 `windows_actions.resolve` binds the selected runner and execution group once;
-`run` and `path` receive that context. Fixed-CPU action payloads constrain their
+`run` and `add_path` receive that context. Fixed-CPU action payloads constrain their
 execution group with `exec_compatible_with`, independently of final-output CPU.
 The explicit-architecture adapter and runner-type designs below are superseded.
 
@@ -30,13 +29,12 @@ runfiles library and forwarding its `EnvVars()` to the payload. A source-built
 Windows program verifies repository mapping and alias-only data through the
 adapter. This is independent of path mapping.
 
-Two boundaries remain in `windows_actions`:
+Path mapping amendment (2026-10-26): both boundaries in `windows_actions` are addressed:
 
-1. The Wine configuration is a separately written JSON file containing analysis-time
-   execution paths. Replace it with an action-owned `Args` parameter file, serializing
+1. Wine configuration uses an action-owned `Args` parameter file, serializing
    typed `File` fields through `map_each` when Bazel expands that action's arguments.
-2. `windows_actions.path` returns a string immediately. Replace or supplement it with
-   an API that adds a typed `File` to `Args`, deferring Windows marker encoding until
+2. `windows_actions.add_path` replaces the eager `path` helper. It adds a typed
+   `File` to `Args`, deferring Windows marker encoding until
    argument expansion. Ordinary strings must remain opaque.
 
 This follows [Bazel's path-mapping guidance](https://github.com/bazelbuild/bazel/discussions/22658).
@@ -46,17 +44,15 @@ uses `PathMapper.NOOP`. A separate write action is therefore not the portable fi
 No manually rewritten `bazel-out` prefix, configuration name, or collision logic
 belongs in this ruleset.
 
-Earlier isolated experiments on 8.5.0 and 9.3.1 verified action-owned JSON parameter
-files with mapping on/off, typed generated paths, executable runfiles, and automatic
-fallback for conflicting mapped inputs. They did not verify a complete Wine fix.
-The action helper is unchanged by this removal and remains unsupported for mapping.
+Isolated experiments on 8.5.0 and 9.3.1 verified real Wine execution and adapters
+with mapping on/off. The repository's `e2e/test_path_mapping.sh` exercises generated
+paths, executable runfiles, parameter files and collision fallback.
 
 Keep opt-in with the consuming action's `supports-path-mapping` execution requirement
 and the user's `--experimental_output_paths=strip` flag. Consumers own their tools'
 output semantics. Environment strings and payload-owned response-file contents are
-not typed paths; do not guess or rewrite them. A future implementation must verify
-real Wine execution, generated inputs/outputs, mapped/unmapped fallback, executable
-runfiles and unchanged native Windows direct dispatch on Bazel 8 and 9. Cross-
+not typed paths; do not guess or rewrite them. Native Windows direct dispatch
+remains unchanged; Starlark graph checks cover its deferred path arguments. Cross-
 configuration cache reuse and native Windows runtime behavior remain unproven.
 
 Scope amendment (2026-10-23): user added native macOS execution and explicitly

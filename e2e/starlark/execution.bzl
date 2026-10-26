@@ -7,11 +7,13 @@ def _impl(ctx):
     for group in ["wine", "native"]:
         runner = windows_actions.resolve(ctx, exec_group = group)
         output = ctx.actions.declare_file(ctx.label.name + "/" + group)
+        args = ctx.actions.args()
+        windows_actions.add_path(runner, args, output)
         windows_actions.run(
             ctx,
             runner = runner,
             executable = getattr(ctx.attr, group)[DefaultInfo].files_to_run,
-            arguments = [windows_actions.path(runner, output)],
+            arguments = [args],
             outputs = [output],
             mnemonic = "WineFixture" if group == "wine" else "NativeFixture",
         )

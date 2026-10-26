@@ -49,6 +49,7 @@ jq -e '.args | index("adapter-consumer") != null' e2e/smoke/bazel-bin/adapter.js
 e2e/test_custom_archive.sh /absolute/path/to/wine-11.0-amd64-wow64.tar.xz SHA256
 e2e/test_starlark.sh
 e2e/test_extension.sh
+e2e/test_path_mapping.sh
 ```
 
 The consumer exercises the public module setup, action helper and binary adapter.
@@ -60,8 +61,7 @@ inspection. Each accepts an optional ruleset checkout path. The extension checks
 automatic default registration, per-platform archive overrides, identical
 dependency declarations, root precedence, conflicts, and dev-only usage. Its
 no-tag setup fails against `d6b9e95`, which required a `.toolchains(...)` call.
-The Starlark script checks the Aa/BB action configuration collision (failing on
-`0f17c44`), aliases under `select()`, executable sidecar outputs,
+The Starlark script checks distinct Aa/BB actions, aliases under `select()`, executable sidecar outputs,
 an external executable's data and expected payload-platform analysis errors.
 It also inspects the same adapter under x86_64 and ARM64 target platforms,
 checking the selected CPU and rejecting incompatible fixed prebuilts. ARM64
@@ -77,6 +77,29 @@ Bazel 8.5.0 and 9.3.1 have been exercised. With Bazelisk, set
 `USE_BAZEL_VERSION` when running the common suite. Add `--lockfile_mode=off` to
 root-workspace commands when checking another Bazel major version to avoid
 rewriting the checked-in lockfile into that version's format.
+
+The path-mapping script runs real Wine actions with mapping enabled and disabled,
+including source-built Windows runfiles fixtures, executable adapters, generated
+PE and data paths, Unicode/braces, literal environment escaping and payload
+parameter files. Split-configured inputs with colliding mapped paths must trigger
+Bazel's unmapped fallback and preserve both inputs. Output records assert the
+paths actually seen by the Windows program; `aquery` checks action-owned JSON
+parameter files. Each run uses an isolated output base and preserves logs and
+records under the printed temporary directory. Run it with
+`USE_BAZEL_VERSION=8.5.0` and `USE_BAZEL_VERSION=9.3.1`.
+On baseline `fc1913e`, `//tests:param_file` fails with
+`--experimental_output_paths=strip --modify_execution_info=WindowsRun=+supports-path-mapping`
+because the supervisor receives the unmapped configuration path.
+
+Path mapping is opt-in per consuming action. Ordinary environment strings and
+paths embedded in arbitrary input/output files are not mapped. The tests exercise
+Bazel-generated response files, not a generic Wine response-file translator.
+Native Windows mapping runtime and cross-configuration cache reuse remain unverified.
+
+For the downstream smoke consumer, enable mapping with
+`--experimental_output_paths=strip '--modify_execution_info=WindowsRun|WineAdapterConsumer=+supports-path-mapping'`.
+Keep command-line opt-in scoped to these actions: the generic `Action` mnemonic
+also selects dependency actions, including LLVM actions that are not mapping-safe.
 
 ## Source build and fixture maintenance
 

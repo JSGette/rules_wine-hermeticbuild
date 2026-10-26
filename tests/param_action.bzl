@@ -9,17 +9,15 @@ def _impl(ctx):
     response.add_all(["response one", "café", ""])
     response.use_param_file("@%s", use_always = True)
     response.set_param_file_format("multiline")
+    args = ctx.actions.args()
+    args.add("--output")
+    windows_actions.add_path(runner, args, output)
+    args.add_all(["/option:one/two", "https://example.test/a/b"])
     windows_actions.run(
         ctx,
         runner = runner,
         executable = ctx.file.binary,
-        arguments = [
-            "--output",
-            windows_actions.path(runner, output),
-            "/option:one/two",
-            "https://example.test/a/b",
-            response,
-        ],
+        arguments = [args, response],
         inputs = depset(),
         outputs = [output],
         env = {"FIXTURE_VALUE": "opaque/unchanged"},

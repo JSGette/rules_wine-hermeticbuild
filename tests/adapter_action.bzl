@@ -1,12 +1,14 @@
 """Fixture consumers of executable adapters and source-built Windows tools."""
 
-load("//wine:actions.bzl", "windows_actions")
+load("//wine:actions.bzl", "windows_actions", "wine_path")
 
 def _impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     args = ctx.actions.args()
     args.add_all(ctx.attr.arguments)
-    args.add_all(["--output", "{windows_path:" + json.encode(output.path) + "}", "adapter-tool"])
+    args.add("--output")
+    args.add_all([output], map_each = wine_path)
+    args.add("adapter-tool")
     ctx.actions.run(
         executable = ctx.attr.tool[DefaultInfo].files_to_run,
         arguments = [args],
@@ -26,9 +28,11 @@ adapter_action = rule(
 
 def _runfiles_adapter_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
+    args = ctx.actions.args()
+    args.add_all([output], map_each = wine_path)
     ctx.actions.run(
         executable = ctx.attr.tool[DefaultInfo].files_to_run,
-        arguments = ["{windows_path:" + json.encode(output.path) + "}"],
+        arguments = [args],
         outputs = [output],
         mnemonic = "RunfilesAdapterFixture",
     )
@@ -45,11 +49,13 @@ runfiles_adapter_action = rule(
 def _runfiles_impl(ctx):
     runner = windows_actions.resolve(ctx)
     output = ctx.actions.declare_file(ctx.label.name + ".json")
+    args = ctx.actions.args()
+    windows_actions.add_path(runner, args, output)
     windows_actions.run(
         ctx,
         runner = runner,
         executable = ctx.attr.tool[0][DefaultInfo].files_to_run,
-        arguments = [windows_actions.path(runner, output)],
+        arguments = [args],
         outputs = [output],
         mnemonic = "RunfilesFixture",
     )

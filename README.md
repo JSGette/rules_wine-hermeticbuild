@@ -104,6 +104,13 @@ paths for Wine. Wrapped programs can therefore use standard runfiles libraries
 when launched as action tools. The ruleset does not create replacement manifests.
 Response-file contents and encoding belong to the payload.
 
+For path arguments to a Wine-only adapter, load `wine_path` from
+`@rules_wine//wine:actions.bzl` and use it as an `Args` callback:
+`args.add_all([output], map_each = wine_path)`. This requires no runner resolution.
+Do not call `wine_path(output)` during analysis; the callback must run during
+argument expansion for optional path mapping to work. For a directory artifact,
+also set `expand_directories = False`.
+
 ## Other rule authors
 
 For a standalone Windows x86_64 prebuilt, constrain the action's execution group
@@ -120,15 +127,14 @@ def _impl(ctx):
     response.add_all(["opaque value", "café"])
     response.use_param_file("@%s", use_always = True)  # Only if your tool supports it.
     response.set_param_file_format("multiline")
+    args = ctx.actions.args()
+    args.add("--output")
+    windows_actions.add_path(runner, args, out)
     windows_actions.run(
         ctx,
         runner = runner,
         executable = ctx.file.tool,
-        arguments = [
-            "--output",
-            windows_actions.path(runner, out),
-            response,
-        ],
+        arguments = [args, response],
         outputs = [out],
     )
     return [DefaultInfo(files = depset([out]))]
@@ -154,7 +160,7 @@ my_rule = rule(
 `windows_actions.toolchain_type` is a Label, shared by every supported CPU.
 Declare it on the rule or execution group before calling `resolve`. The returned
 context binds the selected `WindowsRunnerInfo` (available as `runner.windows`)
-and execution group; pass that same context to `run` and `path`. No architecture
+and execution group; pass that same context to `run` and `add_path`. No architecture
 or group is repeated on those calls. `resolve(ctx)` uses the default group.
 Resolution chooses the runner for the executor, independently of the rule's
 target platform. A fixed-CPU payload requires an execution constraint; its
@@ -177,19 +183,32 @@ a list or depset; `runtime_files`, outputs, environment, mnemonic and additional
 markers inside a response file are not interpreted by the supervisor; use
 payload-native relative paths or format response content in the consumer rule.
 
-The low-level `windows_actions.path` helper encodes a path as a JSON string inside
-`{windows_path:...}` for Wine and returns the ordinary path for native Windows.
-This encoding handles braces, quotes and backslashes without delimiter escaping.
-Use the helper instead of constructing markers by concatenating strings.
-Each wrapped action must have at least one output; its first output identifies
-the configuration under the rule's reserved `<name>.wine/` output directory.
+`windows_actions.add_path(runner, args, file, format = "%s")` appends a typed
+`File` path to an `Args` object. It encodes a JSON-escaped `{windows_path:...}`
+marker for Wine and uses an ordinary path for native Windows. Encoding happens
+during argument expansion, after Bazel applies any path mapping. Directory
+artifacts remain directory paths. Use `format = "/out:%s"` or `"@%s"` for tool
+option syntax. The helper replaces the eager string-returning `windows_actions.path`.
+Use `Args.add` for literal arguments; execution-path strings are not mapped.
 
-Optional Bazel output path mapping is not supported yet. The action helper's JSON
-configuration and explicit path helper currently capture execution paths during
-analysis. Removing the convenience action/test APIs does not fix those remaining
-boundaries. A future implementation can use action-owned `Args` parameter files
-and deferred conversion of typed `File` arguments; callers will still own whether
-their payloads and outputs are safe to opt in.
+Optional Bazel output path mapping is supported on Bazel 8.5 and 9.3. Callers opt
+in with `execution_requirements = {"supports-path-mapping": "1"}` on
+`windows_actions.run` or the action consuming an adapter, and enable
+`--experimental_output_paths=strip`. The same implementation handles mapping off
+and Bazel's fallback when input paths would collide. Wine configuration is JSON
+serialized through an action-owned `Args` parameter file, so its loader, server
+and payload paths receive that action's mapping. `windows_binary` configuration
+continues to use logical runfiles keys; its consumer must construct path arguments
+with deferred `Args` as well.
+
+Opt-in covers the entire action: callers own whether their tool and outputs are
+safe to map. Environment values remain literal strings; paths embedded there or
+in separately generated files are not rewritten. Prefer typed command-line
+arguments for generated paths. Payload response files retain their tool-specific
+syntax and encoding: `Args` can map typed paths in action-owned parameter files,
+but Wine markers inside their contents are not interpreted. Do not use `add_path`
+inside a payload response file. Rules do not inspect or repair arbitrary strings,
+manifests or output contents.
 
 `windows_binary` is one rule requiring `adapter_toolchain_type`. Each implementation
 constrains both executor and target OS/CPU; the resolved toolchain supplies the

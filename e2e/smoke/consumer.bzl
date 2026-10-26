@@ -5,22 +5,27 @@ load("@rules_wine//wine:actions.bzl", "windows_actions")
 def _impl(ctx):
     runner = windows_actions.resolve(ctx)
     action_output = ctx.actions.declare_file("external.json")
+    action_args = ctx.actions.args()
+    action_args.add("--output")
+    windows_actions.add_path(runner, action_args, action_output)
+    action_args.add("external-consumer")
     windows_actions.run(
         ctx,
         runner = runner,
         executable = ctx.file.binary,
-        arguments = [
-            "--output",
-            windows_actions.path(runner, action_output),
-            "external-consumer",
-        ],
+        arguments = [action_args],
         outputs = [action_output],
     )
     adapter_output = ctx.actions.declare_file("adapter.json")
+    adapter_args = ctx.actions.args()
+    adapter_args.add("--output")
+    windows_actions.add_path(runner, adapter_args, adapter_output)
+    adapter_args.add("adapter-consumer")
     ctx.actions.run(
         executable = ctx.attr.adapter[DefaultInfo].files_to_run,
-        arguments = ["--output", windows_actions.path(runner, adapter_output), "adapter-consumer"],
+        arguments = [adapter_args],
         outputs = [adapter_output],
+        mnemonic = "WineAdapterConsumer",
     )
     return [DefaultInfo(files = depset([action_output, adapter_output]))]
 

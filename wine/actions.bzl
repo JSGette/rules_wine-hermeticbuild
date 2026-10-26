@@ -1,8 +1,20 @@
 """Low-level Windows actions using one resolved execution-group context."""
 
-load("//wine/private:paths.bzl", "path_marker")
-
 _TOOLCHAIN_TYPE = Label("//wine:runner_toolchain_type")
+
+def wine_path(file):
+    """Args.map_each callback for Wine-only executable adapter consumers.
+
+    Pass this function to Args.add_all; do not call it during analysis.
+    For runner-based actions, use windows_actions.add_path instead.
+
+    Args:
+        file: File supplied by Args during command-line expansion.
+
+    Returns:
+        A JSON-escaped Wine path marker containing the action-mapped path.
+    """
+    return "{windows_path:" + json.encode(file.path) + "}"
 
 def _resolve(ctx, *, exec_group = "default"):
     """Bind a runner to the execution group declaring its toolchain type.
@@ -12,7 +24,7 @@ def _resolve(ctx, *, exec_group = "default"):
         exec_group: Group declaring windows_actions.toolchain_type.
 
     Returns:
-        Context for run/path, containing WindowsRunnerInfo as windows and the
+        Context for run/add_path, containing WindowsRunnerInfo as windows and the
         action's exec_group. The payload must match windows.arch; constrain the
         execution group for fixed-CPU prebuilts.
     """
@@ -22,19 +34,36 @@ def _resolve(ctx, *, exec_group = "default"):
         exec_group = None if exec_group == "default" else exec_group,
     )
 
-def path(runner, file, format = "%s"):
-    """Explicit path interpolation; only these values are converted for Wine.
+def _add_path(runner, args, file, format = "%s"):
+    """Append a File path, deferring mapping and Wine encoding until execution.
+
+    Use this for command-line arguments, not markers inside payload response
+    files. Tree artifacts are passed as directory paths rather than expanded.
 
     Args:
         runner: Context returned by windows_actions.resolve.
-        file: File, or action-relative path string.
+        args: Args object receiving the argument.
+        file: File or tree artifact. Pass ordinary strings with Args.add instead.
         format: Surrounding option syntax, e.g. /out:%s.
-
-    Returns:
-        A path argument formatted for the selected executor.
     """
-    value = file.path if type(file) == "File" else file
-    return format % (path_marker(value) if runner.windows.backend == "wine" else value)
+    args.add_all(
+        [file],
+        map_each = wine_path if runner.windows.backend == "wine" else None,
+        format_each = format,
+        expand_directories = False,
+    )
+
+def _configuration(record):
+    # Called by Args under the consuming action's path mapper. Never serialize
+    # execution paths in a separate write action: its mapping can differ.
+    return json.encode({
+        "arch": record.arch,
+        "loader": record.loader.path,
+        "server": record.server.path,
+        "payload": record.payload.path,
+        "env": record.env,
+        "runtime_env": record.runtime_env,
+    })
 
 def _run(
         ctx,
@@ -50,8 +79,6 @@ def _run(
         mnemonic = "WindowsRun",
         progress_message = None,
         **kwargs):
-    if not outputs:
-        fail("Windows actions require at least one output to identify their configuration")
     action_group = runner.exec_group
     runner = runner.windows
     payload = executable.executable if type(executable) == "FilesToRunProvider" else executable
@@ -81,21 +108,21 @@ def _run(
         )
         return
 
-    # First output identifies the action. Reserve a target-owned namespace;
-    # unlike hashes, distinct output paths cannot alias this configuration.
-    config = ctx.actions.declare_file(ctx.label.name + ".wine/" + outputs[0].path + ".json")
-    ctx.actions.write(config, json.encode({
-        "arch": runner.arch,
-        "loader": runner.runtime.loader.path,
-        "server": runner.runtime.server.path,
-        "payload": payload.path,
-        "env": env,
-        "runtime_env": runner.runtime.env,
-    }))
+    config = ctx.actions.args()
+    config.add_all([struct(
+        arch = runner.arch,
+        loader = runner.runtime.loader,
+        server = runner.runtime.server,
+        payload = payload,
+        env = env,
+        runtime_env = runner.runtime.env,
+    )], map_each = _configuration)
+    config.set_param_file_format("multiline")
+    config.use_param_file("%s", use_always = True)
     ctx.actions.run(
         executable = runner.launcher,
-        arguments = ["--config", config.path, "--"] + arguments,
-        inputs = depset([config, payload] + runtime_files, transitive = [input_set, runner.runtime.files]),
+        arguments = ["--config", config, "--"] + arguments,
+        inputs = depset([payload] + runtime_files, transitive = [input_set, runner.runtime.files]),
         outputs = outputs,
         # These describe the Windows payload. A custom native launcher must
         # discover its own FilesToRunProvider runfiles before starting it.
@@ -112,4 +139,4 @@ def _run(
         **kwargs
     )
 
-windows_actions = struct(run = _run, path = path, resolve = _resolve, toolchain_type = _TOOLCHAIN_TYPE)
+windows_actions = struct(run = _run, add_path = _add_path, resolve = _resolve, toolchain_type = _TOOLCHAIN_TYPE)

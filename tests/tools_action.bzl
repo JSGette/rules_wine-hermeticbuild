@@ -5,11 +5,13 @@ load("//wine:actions.bzl", "windows_actions")
 def _impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     runner = windows_actions.resolve(ctx, exec_group = ctx.attr._exec_group)
-    arguments = ["--output", windows_actions.path(runner, output)]
+    arguments = ctx.actions.args()
+    arguments.add("--output")
+    windows_actions.add_path(runner, arguments, output)
     kwargs = {}
     if ctx.attr.additional_tools:
         extra = ctx.attr.extra[DefaultInfo]
-        arguments.append(windows_actions.path(runner, ctx.file.extra_data, format = "@%s"))
+        windows_actions.add_path(runner, arguments, ctx.file.extra_data, format = "@%s")
         kwargs["tools"] = [extra.files_to_run]
 
         # A directly addressed File is an input. FTR runfiles have their own
@@ -19,7 +21,7 @@ def _impl(ctx):
         ctx,
         runner = runner,
         executable = ctx.file.binary,
-        arguments = arguments,
+        arguments = [arguments],
         outputs = [output],
         **kwargs
     )

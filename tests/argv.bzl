@@ -38,11 +38,15 @@ def _two_actions_impl(ctx):
     outputs = []
     for name in ["Aa", "BB"]:
         output = ctx.actions.declare_file(ctx.label.name + "/" + name)
+        args = ctx.actions.args()
+        args.add("--output")
+        windows_actions.add_path(runner, args, output)
+        args.add(name)
         windows_actions.run(
             ctx,
             runner = runner,
             executable = ctx.file.binary,
-            arguments = ["--output", windows_actions.path(runner, output), name],
+            arguments = [args],
             env = {"FIXTURE_VALUE": name},
             outputs = [output],
         )

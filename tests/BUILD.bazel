@@ -2,6 +2,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("//tests:adapter_action.bzl", "adapter_action", "runfiles_action", "runfiles_adapter_action")
 load("//tests:argv.bzl", "alias_data", "argv_record_test", "two_actions")
 load("//tests:param_action.bzl", "param_action")
+load("//tests:path_mapping.bzl", "mapping_action", "mapping_input", "mapping_payload", "mapping_variant")
 load("//tests:tools_action.bzl", "default_tools_action", "tools_action")
 load("//tests:verify_test.bzl", "runtime_contract_test")
 load("//wine:windows_binary.bzl", "windows_binary")
@@ -221,4 +222,29 @@ runtime_contract_test(
     payload = "fixture/fixture_x86_64.exe",
     payload_layout = True,
     wrong_arch = "fixture/fixture_aarch64.exe",
+)
+
+mapping_variant(
+    name = "mapping_variant",
+    build_setting_default = "default",
+)
+
+mapping_input(name = "mapping_input")
+
+mapping_payload(
+    name = "mapping_payload",
+    binary = "fixture/fixture_x86_64.exe",
+)
+
+mapping_action(
+    name = "mapped_paths",
+    src = "mapping_input",
+    binary = "mapping_payload",
+)
+
+mapping_action(
+    name = "mapping_collision",
+    src = "mapping_input",
+    binary = "mapping_payload",
+    collision = True,
 )

@@ -13,7 +13,7 @@ printf 'Verification workspace: %s\n' "$scratch"
 cd "$scratch"
 trap 'bazel shutdown >/dev/null 2>&1' EXIT
 query() {
-  bazel aquery "$1" --config=remote --extra_execution_platforms=//:audit_exec --extra_toolchains="$2" --lockfile_mode=off > "$scratch/$3"
+  bazel aquery "$1" --config=remote --extra_execution_platforms=//:audit_exec --extra_toolchains="$2" --lockfile_mode=off --include_param_files > "$scratch/$3"
 }
 query 'deps(//:collision)' '//:runner' actions.txt
 grep -q 'launcher_data' actions.txt
@@ -62,7 +62,7 @@ grep -q 'incompatible' fixed_x86-arm64.log
 # One rule uses different CPUs/backends on its two execution groups. Its target
 # platform must not steer either group, and paths must follow their own backend.
 for platform in audit_exec audit_arm64; do
-  bazel aquery //:grouped_actions --config=remote --lockfile_mode=off --platforms="//:$platform" --extra_execution_platforms=//:audit_arm64,//:audit_windows --extra_toolchains=//:runner_arm64,//:native_runner --include_file_write_contents --output=jsonproto > "groups-$platform.json"
+  bazel aquery //:grouped_actions --config=remote --lockfile_mode=off --platforms="//:$platform" --extra_execution_platforms=//:audit_arm64,//:audit_windows --extra_toolchains=//:runner_arm64,//:native_runner --include_param_files --output=jsonproto > "groups-$platform.json"
   jq -e '
     [.actions[] | select(.mnemonic == "WineFixture")] as $wine |
     [.actions[] | select(.mnemonic == "NativeFixture")] as $native |
@@ -70,7 +70,8 @@ for platform in audit_exec audit_arm64; do
     [$native[].executionPlatform] == ["//:audit_windows"] and
     ([$wine[].arguments[] | contains("{windows_path:")] | any) and
     ([$native[].arguments[] | contains("{windows_path:")] | any | not) and
-    [.actions[] | select(.mnemonic == "FileWrite") | (.fileContents | fromjson).arch] == ["aarch64"]
+    [$wine[].arguments[2] | fromjson | .arch] == ["aarch64"] and
+    ([$native[].arguments[] | select(. == "--config")] | length) == 0
   ' "groups-$platform.json"
 done
 # Fixed-x86 payloads constrain execution, even when the final target is ARM64.
