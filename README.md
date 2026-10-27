@@ -46,6 +46,9 @@ only when referenced.
 
 The default is [Kron4ek Wine 11.0 amd64 WoW64](https://github.com/Kron4ek/Wine-Builds/releases/tag/11.0),
 SHA256 `39574efa1132c3ca0d5c77dd2eddbe4a49cca0d6cc2c290ff4924493a1c40314`.
+Its Unix modules linking host libraries beyond glibc are removed (X11, Wayland,
+audio, GStreamer, FFmpeg, udev, USB, OpenCL, scanners, cameras, ISDN, smart cards
+and pcap), so those subsystems are unavailable whatever the host has installed.
 It requires the host glibc ELF interpreter, libc/libdl/libpthread and libgcc_s.
 Ubuntu 24.04 console execution was verified; missing FreeType emits warnings.
 Other Windows subsystems can require additional host libraries. A pinned archive
@@ -235,7 +238,9 @@ use_repo(wine, "wine_toolchains")
 register_toolchains("@wine_toolchains//:all")
 ```
 
-`http_archive` owns download, checksum, mirror retry and extraction. Archive paths
+Bazel's downloader owns download, checksum, mirror retry, `.netrc` authentication
+and extraction. `remove` deletes archive paths after extraction and fails if one
+is missing; Wine can still find files merely left out of `files`. Archive paths
 must stay relative. Loader/server must be native ELF or Mach-O executables;
 the supervisor checks their CPU headers before launch (no Rosetta fallback).
 Shell-script Wine launchers are not accepted. Keep the complete installation layout.

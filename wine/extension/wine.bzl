@@ -1,7 +1,6 @@
 """Default Wine toolchains with per-platform prebuilt overrides."""
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("//wine/private:repositories.bzl", "registration_repository")
+load("//wine/private:repositories.bzl", "registration_repository", "wine_archive")
 
 _DEFAULT = struct(
     urls = ["https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/wine-11.0-amd64-wow64.tar.xz"],
@@ -11,6 +10,24 @@ _DEFAULT = struct(
     loader = "bin/wine",
     server = "bin/wineserver",
     files = ["**"],
+    # Unix modules linking host libraries beyond glibc. Their Windows DLLs stay
+    # and behave as on a host without those libraries.
+    remove = ["lib/wine/x86_64-unix/{}.so".format(module) for module in [
+        "capi2032",
+        "gphoto2",
+        "opencl",
+        "sane",
+        "winealsa",
+        "winebus",
+        "winedmo",
+        "winegstreamer",
+        "winepulse",
+        "wineusb",
+        "winewayland",
+        "winex11",
+        "winscard",
+        "wpcap",
+    ]],
     arch = "x86_64",
     exec_os = "linux",
     env = {},
@@ -33,6 +50,7 @@ def _distribution(tag):
             "loader",
             "server",
             "files",
+            "remove",
             "arch",
             "exec_os",
             "env",
@@ -52,12 +70,15 @@ def _archive(name, tag):
         _relative(tag.strip_prefix, "strip_prefix")
     for pattern in tag.files:
         _relative(pattern, "files")
-    http_archive(
+    for path in tag.remove:
+        _relative(path, "remove")
+    wine_archive(
         name = name,
         urls = tag.urls,
         sha256 = tag.sha256,
         integrity = tag.integrity,
         strip_prefix = tag.strip_prefix,
+        remove = tag.remove,
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "loader", srcs = [{}])'.format(repr(tag.loader)),
@@ -121,6 +142,7 @@ wine = module_extension(
                 "loader": attr.string(default = "bin/wine"),
                 "server": attr.string(default = "bin/wineserver"),
                 "files": attr.string_list(default = ["**"], allow_empty = False),
+                "remove": attr.string_list(doc = "Archive paths deleted after extraction; each must exist."),
                 "identity": attr.string(mandatory = True),
                 "requirements": attr.string(mandatory = True),
                 "env": attr.string_dict(doc = "Loader environment; supports {loader_dir} and {server_dir}."),
